@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tap2Dine — Digital Menu & Ordering</title>
+  <meta name="description" content="Scan, browse, and order your favourite dishes right from your table. No waiting, no hassle." />
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#ff6b35" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Tap2Dine" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── HEADER ── -->
+  <header class="header" id="header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">🍽️</span>
+        <span class="logo-text">Tap<span class="accent">2</span>Dine</span>
+      </div>
+      <div class="table-badge" id="tableBadge">Table 4</div>
+      <button class="cart-btn" id="cartBtn" onclick="openCart()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+        <span class="cart-count" id="cartCount">0</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ── LIVE ORDER STATUS BANNER ── -->
+  <div id="statusBanner" style="
+    display:none;
+    position:fixed;
+    top:0;
+    left:0;
+    right:0;
+    z-index:999;
+    padding:10px 20px;
+    justify-content:center;
+    align-items:center;
+    font-weight:600;
+    font-size:0.9rem;
+    color:#fff;
+    letter-spacing:0.02em;
+    box-shadow:0 2px 12px rgba(0,0,0,0.25);
+    transition:background 0.4s;
+  "></div>
+
+  <!-- ── HERO ── -->
+  <section class="hero">
+    <div class="hero-content">
+      <p class="hero-sub">Welcome to</p>
+      <h1 class="hero-title">The Grand Bistro</h1>
+      <p class="hero-desc">Explore our curated menu and order fresh, chef-crafted dishes straight to your table — instantly.</p>
+    </div>
+    <div class="hero-visual">
+      <div class="hero-plate">🥘</div>
+    </div>
+  </section>
+
+  <!-- ── CATEGORY TABS ── -->
+  <section class="categories" id="categories">
+    <div class="category-tabs" id="categoryTabs">
+      <button class="cat-tab active" onclick="filterMenu('all', this)">All</button>
+      <button class="cat-tab" onclick="filterMenu('starters', this)">🥗 Starters</button>
+      <button class="cat-tab" onclick="filterMenu('mains', this)">🍛 Mains</button>
+      <button class="cat-tab" onclick="filterMenu('pizza', this)">🍕 Pizza</button>
+      <button class="cat-tab" onclick="filterMenu('burgers', this)">🍔 Burgers</button>
+      <button class="cat-tab" onclick="filterMenu('desserts', this)">🍰 Desserts</button>
+      <button class="cat-tab" onclick="filterMenu('drinks', this)">🥤 Drinks</button>
+    </div>
+  </section>
+
+  <!-- ── TRENDING / POPULAR STRIP ── -->
+  <section class="popular-section" id="popularSection" style="display:none;">
+    <div class="strip-header">
+      <span class="strip-title">🔥 Trending Today</span>
+      <span class="strip-badge" id="popularBadge">Curated Picks</span>
+    </div>
+    <div class="popular-scroll" id="popularScroll"></div>
+  </section>
+
+  <!-- ── MENU GRID ── -->
+  <main class="menu-section">
+    <div class="menu-grid" id="menuGrid"></div>
+  </main>
+
+  <!-- ── RECOMMENDATIONS STRIP ── -->
+  <section class="recommend-section" id="recommendSection" style="display:none;">
+    <div class="strip-header">
+      <span class="strip-title">💡 You May Also Like</span>
+    </div>
+    <div class="recommend-scroll" id="recommendScroll"></div>
+  </section>
+
+  <!-- ── CART DRAWER ── -->
+  <div class="cart-overlay" id="cartOverlay" onclick="closeCart()"></div>
+  <aside class="cart-drawer" id="cartDrawer">
+    <div class="cart-header">
+      <h2>Your Order</h2>
+      <button class="close-btn" onclick="closeCart()">✕</button>
+    </div>
+    <div class="cart-items" id="cartItems">
+      <div class="cart-empty" id="cartEmpty">
+        <span>🛒</span>
+        <p>Your cart is empty</p>
+        <small>Add items from the menu to get started</small>
+      </div>
+    </div>
+    <div class="cart-footer" id="cartFooter" style="display:none;">
+      <div class="cart-subtotal">
+        <span>Subtotal</span>
+        <span id="cartSubtotal">₹0</span>
+      </div>
+      <div class="cart-tax">
+        <span>GST (5%)</span>
+        <span id="cartTax">₹0</span>
+      </div>
+      <div class="cart-total">
+        <span>Total</span>
+        <span id="cartTotal">₹0</span>
+      </div>
+      <div class="cart-note">
+        <input type="text" id="orderNote" placeholder="Special instructions (optional)…" />
+      </div>
+      <button class="place-order-btn" onclick="placeOrder()">
+        Place Order 🚀
+      </button>
+    </div>
+  </aside>
+
+  <!-- ── ORDER SUCCESS MODAL ── -->
+  <div class="modal-overlay" id="successModal" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-icon">✅</div>
+      <h2>Order Placed!</h2>
+      <p>Your order has been sent to the kitchen. Estimated time: <strong>20–25 min</strong></p>
+      <div class="order-id-box">
+        Order ID: <strong id="orderId">#T2D-0001</strong>
+      </div>
+      <button class="modal-close-btn" onclick="closeModal()">Back to Menu</button>
+    </div>
+  </div>
+
+  <!-- ── WAITER CALL FAB ── -->
+  <button id="waiterBtn" onclick="openWaiterModal()" style="
+    position:fixed;
+    bottom:24px;
+    right:24px;
+    z-index:500;
+    background:linear-gradient(135deg,#f59e0b,#ef4444);
+    color:#fff;
+    border:none;
+    border-radius:50px;
+    padding:14px 22px;
+    font-size:0.9rem;
+    font-weight:700;
+    font-family:inherit;
+    cursor:pointer;
+    box-shadow:0 4px 20px rgba(239,68,68,0.45);
+    display:flex;
+    align-items:center;
+    gap:8px;
+    transition:transform 0.15s,opacity 0.2s;
+  " onmouseover="this.style.transform='scale(1.06)'" onmouseout="this.style.transform='scale(1)'">
+    🔔 Call Waiter
+  </button>
+
+  <!-- ── ORDER HISTORY BUTTON ── -->
+  <button id="historyBtn" onclick="openOrderHistory()" style="
+    position:fixed;
+    bottom:24px;
+    left:24px;
+    z-index:500;
+    background:rgba(30,30,40,0.92);
+    color:#f0f0f5;
+    border:1px solid rgba(255,255,255,0.1);
+    border-radius:50px;
+    padding:12px 20px;
+    font-size:0.85rem;
+    font-weight:700;
+    font-family:inherit;
+    cursor:pointer;
+    backdrop-filter:blur(12px);
+    display:none;
+    align-items:center;
+    gap:8px;
+    transition:all 0.2s;
+  " onmouseover="this.style.borderColor='rgba(255,107,53,0.5)'" onmouseout="this.style.borderColor='rgba(255,255,255,0.1)'">
+    📋 My Orders
+  </button>
+
+  <!-- ── TOAST ── -->
+  <div class="toast" id="toast"></div>
+
+  <!-- ── WAITER CALL MODAL ── -->
+  <div class="waiter-modal-overlay" id="waiterModalOverlay" style="display:none;" onclick="closeWaiterModalOutside(event)">
+    <div class="waiter-sheet">
+      <div class="waiter-sheet-handle"></div>
+      <h3>🔔 Call Waiter</h3>
+      <p>Select the reason — your waiter will be notified instantly</p>
+      <div class="waiter-reasons" id="waiterReasons">
+        <button class="reason-btn" data-reason="Bill please"      onclick="selectWaiterReason(this)">💳 Bill Please</button>
+        <button class="reason-btn" data-reason="Need assistance"  onclick="selectWaiterReason(this)">🙋 Need Help</button>
+        <button class="reason-btn" data-reason="Refill water"     onclick="selectWaiterReason(this)">💧 Refill Water</button>
+        <button class="reason-btn" data-reason="Extra cutlery"    onclick="selectWaiterReason(this)">🍴 Extra Cutlery</button>
+        <button class="reason-btn" data-reason="Order issue"      onclick="selectWaiterReason(this)">⚠️ Order Issue</button>
+        <button class="reason-btn" data-reason="Other"            onclick="selectWaiterReason(this)">📝 Other</button>
+      </div>
+      <button class="waiter-confirm-btn" id="waiterConfirmBtn" onclick="confirmWaiterCall()" disabled>
+        🔔 Notify Waiter
+      </button>
+      <button class="waiter-cancel-btn" onclick="closeWaiterModal()">Cancel</button>
+    </div>
+  </div>
+
+  <!-- ── ORDER HISTORY MODAL ── -->
+  <div class="waiter-modal-overlay" id="orderHistoryOverlay" style="display:none;" onclick="closeHistoryOutside(event)">
+    <div class="waiter-sheet" style="max-height:80vh;overflow-y:auto;">
+      <div class="waiter-sheet-handle"></div>
+      <h3>📋 My Orders</h3>
+      <p>Orders placed this session</p>
+      <div id="orderHistoryList" style="margin-bottom:20px;"></div>
+      <button class="waiter-cancel-btn" onclick="closeOrderHistory()">Close</button>
+    </div>
+  </div>
+
+  <!-- ── MOBILE STICKY CART BAR ── -->
+  <div class="mobile-cart-bar" id="mobileCartBar" onclick="openCart()">
+    <div class="mcb-left">
+      <div class="mcb-count" id="mcbCount">0</div>
+      <div class="mcb-text">View Your Cart</div>
+    </div>
+    <div class="mcb-total" id="mcbTotal">₹0</div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

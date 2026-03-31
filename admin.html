@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tap2Dine — Admin Panel</title>
+  <meta name="description" content="Restaurant admin dashboard — manage live orders, menu items, and kitchen status." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <span>🍽️</span>
+      <span>Tap<span class="accent">2</span>Dine</span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button class="nav-item active" id="navOrders"    onclick="switchTab('orders',this)">
+        <span class="nav-icon">📋</span> Live Orders
+        <span class="live-dot"></span>
+      </button>
+      <button class="nav-item" id="navKitchen"  onclick="switchTab('kitchen',this)">
+        <span class="nav-icon">👨‍🍳</span> Kitchen View
+      </button>
+      <button class="nav-item" id="navMenu"     onclick="switchTab('menu',this)">
+        <span class="nav-icon">🍕</span> Menu Manager
+      </button>
+      <button class="nav-item" id="navAnalytics" onclick="switchTab('analytics',this)">
+        <span class="nav-icon">📊</span> Analytics
+      </button>
+      <button class="nav-item" id="navWaiter" onclick="toggleWaiterPanel()" style="margin-top:8px;border-top:1px solid var(--border);padding-top:14px;">
+        <span class="nav-icon">🔔</span> Waiter Calls
+        <span class="wc-badge" id="wcBadge" style="display:none;">0</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <a href="index.html?table=1" class="menu-link" target="_blank">↗ View Customer Menu</a>
+    </div>
+  </aside>
+
+  <!-- ── MAIN ── -->
+  <main class="main">
+
+    <!-- ── TOP BAR ── -->
+    <header class="topbar">
+      <div>
+        <h1 class="topbar-title" id="tabTitle">Live Orders</h1>
+        <p class="topbar-sub" id="tabSub">Real-time incoming orders from all tables</p>
+      </div>
+      <div class="topbar-actions">
+        <!-- WebSocket live indicator -->
+        <div id="wsStatus" style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--muted);margin-right:8px;">
+          <span id="wsDot" style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;"></span>
+          <span id="wsText">Connecting…</span>
+        </div>
+        <div class="live-badge">🔴 LIVE</div>
+        <button class="clear-btn" onclick="clearAllOrders()">Clear All</button>
+      </div>
+    </header>
+
+    <!-- ── ORDERS TAB ── -->
+    <section class="tab-content" id="tabOrders">
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-num" id="statPending">0</div>
+          <div class="stat-label">Pending</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="statPreparing">0</div>
+          <div class="stat-label">Preparing</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="statReady">0</div>
+          <div class="stat-label">Ready</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="statDelivered">0</div>
+          <div class="stat-label">Delivered</div>
+        </div>
+      </div>
+      <div class="orders-grid" id="ordersGrid">
+        <div class="empty-state">
+          <span>📭</span>
+          <p>No orders yet.</p>
+          <small>Orders will appear here in real-time.</small>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── KITCHEN TAB ── -->
+    <section class="tab-content" id="tabKitchen" style="display:none;">
+      <div class="kitchen-columns">
+        <div class="kitchen-col">
+          <div class="kitchen-col-header pending-header">🔔 New / Pending</div>
+          <div id="kitchenPending"></div>
+        </div>
+        <div class="kitchen-col">
+          <div class="kitchen-col-header preparing-header">🔥 Preparing</div>
+          <div id="kitchenPreparing"></div>
+        </div>
+        <div class="kitchen-col">
+          <div class="kitchen-col-header ready-header">✅ Ready to Serve</div>
+          <div id="kitchenReady"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── MENU TAB ── -->
+    <section class="tab-content" id="tabMenu" style="display:none;">
+      <div class="menu-manager">
+        <div class="add-item-form" id="addItemForm">
+          <h3>Add New Menu Item</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Item Name *</label>
+              <input type="text" id="newName" placeholder="e.g. Paneer Tikka" />
+            </div>
+            <div class="form-group">
+              <label>Emoji Icon</label>
+              <input type="text" id="newEmoji" placeholder="e.g. 🧆" maxlength="4" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Price (₹) *</label>
+              <input type="number" id="newPrice" placeholder="e.g. 249" />
+            </div>
+            <div class="form-group">
+              <label>Category *</label>
+              <select id="newCat">
+                <option value="starters">Starters</option>
+                <option value="mains">Mains</option>
+                <option value="pizza">Pizza</option>
+                <option value="burgers">Burgers</option>
+                <option value="desserts">Desserts</option>
+                <option value="drinks">Drinks</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Description</label>
+            <input type="text" id="newDesc" placeholder="Short description of the dish…" />
+          </div>
+          <div class="form-row">
+            <label class="toggle-label">
+              <input type="checkbox" id="newVeg" checked /> Vegetarian
+            </label>
+            <label class="toggle-label">
+              <input type="checkbox" id="newSpicy" /> Spicy 🌶️
+            </label>
+          </div>
+          <button class="add-item-btn" onclick="addMenuItem()">+ Add Item</button>
+        </div>
+
+        <div class="menu-list" id="menuList"></div>
+      </div>
+    </section>
+
+    <!-- ── ANALYTICS TAB ── -->
+    <section class="tab-content" id="tabAnalytics" style="display:none;">
+      <div class="analytics-grid">
+        <div class="analytics-card full-width">
+          <h3>Revenue Overview</h3>
+          <div class="revenue-row">
+            <div class="rev-item">
+              <div class="rev-num" id="revTotal">₹0</div>
+              <div class="rev-label">Total Revenue</div>
+            </div>
+            <div class="rev-item">
+              <div class="rev-num" id="revOrders">0</div>
+              <div class="rev-label">Total Orders</div>
+            </div>
+            <div class="rev-item">
+              <div class="rev-num" id="revAvg">₹0</div>
+              <div class="rev-label">Avg Order Value</div>
+            </div>
+          </div>
+        </div>
+        <div class="analytics-card">
+          <h3>Top Ordered Items</h3>
+          <div id="topItems"></div>
+        </div>
+        <div class="analytics-card">
+          <h3>Orders by Table</h3>
+          <div id="tableStats"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ── WAITER CALLS PANEL ── -->
+  <div class="wc-panel" id="wcPanel">
+    <div class="wc-panel-header">
+      <span>🔔 Waiter Calls</span>
+      <button class="wc-close-btn" onclick="toggleWaiterPanel()">✕</button>
+    </div>
+    <div id="wcList" class="wc-list">
+      <p class="wc-empty">No active calls</p>
+    </div>
+  </div>
+
+  <!-- ── TOAST ── -->
+  <div class="toast" id="adminToast"></div>
+
+  <script src="admin.js"></script>
+</body>
+</html>

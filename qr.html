@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tap2Dine — QR Code Generator</title>
+  <meta name="description" content="Generate QR codes for each table in your restaurant." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f0f13; --bg2: #17171e; --card: #1e1e28;
+      --border: rgba(255,255,255,0.07); --accent: #ff6b35; --accent2: #ff9f1c;
+      --text: #f0f0f5; --muted: #9090a8; --radius: 16px;
+    }
+    body { font-family: 'Outfit', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    .header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 16px 32px; display: flex; align-items: center; gap: 10px; }
+    .logo { font-size: 1.3rem; font-weight: 800; }
+    .accent { color: var(--accent); }
+    .container { max-width: 900px; margin: 0 auto; padding: 40px 24px; }
+    h1 { font-size: 2rem; font-weight: 800; margin-bottom: 6px; }
+    .sub { color: var(--muted); margin-bottom: 36px; }
+    .controls { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; margin-bottom: 36px; }
+    .controls h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 16px; }
+    .form-row { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; }
+    .form-group { display: flex; flex-direction: column; gap: 5px; }
+    label { font-size: 0.8rem; font-weight: 600; color: var(--muted); }
+    input[type="text"], input[type="number"] {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text); font-family: 'Outfit', sans-serif; font-size: 0.9rem;
+      padding: 10px 14px; outline: none; transition: border-color 0.2s; width: 180px;
+    }
+    input:focus { border-color: var(--accent); }
+    .gen-btn {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border: none; color: #fff; font-family: 'Outfit', sans-serif;
+      font-weight: 700; font-size: 0.95rem; padding: 10px 24px; border-radius: 8px;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .gen-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(255,107,53,0.4); }
+    .qr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
+    .qr-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 20px; text-align: center; transition: transform 0.2s;
+    }
+    .qr-card:hover { transform: translateY(-4px); }
+    .qr-card canvas { border-radius: 8px; background: #fff; padding: 10px; }
+    .qr-table-name { font-weight: 700; font-size: 1rem; margin: 12px 0 4px; }
+    .qr-url { color: var(--muted); font-size: 0.72rem; word-break: break-all; margin-bottom: 12px; }
+    .dl-btn {
+      background: var(--bg2); border: 1px solid var(--border); color: var(--text);
+      font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 0.8rem;
+      padding: 7px 16px; border-radius: 50px; cursor: pointer; transition: all 0.2s;
+    }
+    .dl-btn:hover { background: var(--accent); border-color: var(--accent); }
+    .nav-links { display: flex; gap: 12px; margin-left: auto; }
+    .nav-link { color: var(--muted); text-decoration: none; font-size: 0.88rem; font-weight: 600; transition: color 0.2s; }
+    .nav-link:hover { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <span style="font-size:1.5rem;">🍽️</span>
+    <span class="logo">Tap<span class="accent">2</span>Dine</span>
+    <div class="nav-links">
+      <a class="nav-link" href="index.html">Customer Menu</a>
+      <a class="nav-link" href="admin.html">Admin Panel</a>
+    </div>
+  </header>
+
+  <div class="container">
+    <h1>QR Code Generator</h1>
+    <p class="sub">Generate and print QR codes for each table. Each code links customers directly to your menu.</p>
+
+    <div class="controls">
+      <h2>⚙️ Settings</h2>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Base URL</label>
+          <input type="text" id="baseUrl" value="" placeholder="auto-detected" style="width:280px;" />
+        </div>
+        <div class="form-group">
+          <label>Number of Tables</label>
+          <input type="number" id="tableCount" value="10" min="1" max="50" />
+        </div>
+        <button class="gen-btn" onclick="generateQRs()">🔄 Generate QR Codes</button>
+      </div>
+    </div>
+
+    <div class="qr-grid" id="qrGrid"></div>
+  </div>
+
+  <!-- QR library via CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script>
+    // Auto-detect base URL (replace qr.html → index.html)
+    const auto = window.location.href.replace('qr.html','index.html').split('?')[0];
+    document.getElementById('baseUrl').value = auto;
+
+    function generateQRs() {
+      const base  = document.getElementById('baseUrl').value.trim().replace(/\/$/, '');
+      const count = parseInt(document.getElementById('tableCount').value) || 10;
+      const grid  = document.getElementById('qrGrid');
+      grid.innerHTML = '';
+
+      for (let t = 1; t <= count; t++) {
+        const url  = `${base}?table=${t}`;
+        const card = document.createElement('div');
+        card.className = 'qr-card';
+        const canvasWrap = document.createElement('div');
+        canvasWrap.id = `qr-${t}`;
+        card.innerHTML = `
+          <div id="qr-${t}"></div>
+          <div class="qr-table-name">Table ${t}</div>
+          <div class="qr-url">${url}</div>
+          <button class="dl-btn" onclick="downloadQR(${t})">⬇ Download</button>`;
+        grid.appendChild(card);
+
+        setTimeout(() => {
+          new QRCode(document.getElementById(`qr-${t}`), {
+            text: url, width: 160, height: 160,
+            colorDark: '#0f0f13', colorLight: '#ffffff',
+            correctLevel: QRCode.CorrectLevel.H
+          });
+        }, t * 30);
+      }
+    }
+
+    function downloadQR(t) {
+      const wrap = document.getElementById(`qr-${t}`);
+      const img  = wrap.querySelector('img') || wrap.querySelector('canvas');
+      if (!img) return;
+      const link = document.createElement('a');
+      link.download = `table-${t}-qr.png`;
+      link.href = img.src || img.toDataURL();
+      link.click();
+    }
+
+    // Auto-generate on load
+    generateQRs();
+  </script>
+</body>
+</html>
