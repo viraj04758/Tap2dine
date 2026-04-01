@@ -6,63 +6,162 @@
   <title>Tap2Dine — QR Code Generator</title>
   <meta name="description" content="Generate QR codes for each table in your restaurant." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg: #0f0f13; --bg2: #17171e; --card: #1e1e28;
-      --border: rgba(255,255,255,0.07); --accent: #ff6b35; --accent2: #ff9f1c;
-      --text: #f0f0f5; --muted: #9090a8; --radius: 16px;
+      --bg: #0B1320; /* Deep navy blue from brand */
+      --bg2: #142238; 
+      --card: #1C2D4A;
+      --border: rgba(255,255,255,0.08); 
+      --accent: #F27A20; /* Bright orange from brand */
+      --accent-hover: #D66716;
+      --text: #f0f0f5; 
+      --muted: #9BA9C0; 
+      --radius: 12px;
+      --brand-blue: #3E84C5; /* The blue used for "Dine" */
+      --brand-dark: #12213D;
     }
     body { font-family: 'Outfit', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-    .header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 16px 32px; display: flex; align-items: center; gap: 10px; }
-    .logo { font-size: 1.3rem; font-weight: 800; }
-    .accent { color: var(--accent); }
-    .container { max-width: 900px; margin: 0 auto; padding: 40px 24px; }
-    h1 { font-size: 2rem; font-weight: 800; margin-bottom: 6px; }
-    .sub { color: var(--muted); margin-bottom: 36px; }
-    .controls { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; margin-bottom: 36px; }
-    .controls h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 16px; }
-    .form-row { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; }
-    .form-group { display: flex; flex-direction: column; gap: 5px; }
-    label { font-size: 0.8rem; font-weight: 600; color: var(--muted); }
+    
+    .header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 16px 32px; display: flex; align-items: center; gap: 15px; }
+    
+    /* Brand Logo SVG Style */
+    .brand-icon {
+      width: 32px; height: 32px;
+      background: var(--accent);
+      border-radius: 8px;
+      position: relative;
+      overflow: hidden;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    .brand-icon::before {
+      content: ""; position: absolute; top: 18%; right: 18%; width: 28%; height: 28%; border: 2px solid white;
+    }
+    .brand-icon::after {
+      content: ""; position: absolute; bottom: 18%; right: 18%; width: 28%; height: 28%; border: 2px solid white;
+    }
+    .brand-hand {
+      position: absolute; bottom: -2px; left: -2px; width: 60%; height: 60%;
+      background: white; border-top-right-radius: 10px;
+      clip-path: polygon(0 40%, 40% 0, 70% 30%, 50% 50%, 100% 60%, 80% 100%, 0 100%);
+    }
+
+    .logo { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.5px; }
+    .logo-tap { color: var(--accent); }
+    .logo-dine { color: var(--brand-blue); }
+    
+    .container { max-width: 1100px; margin: 0 auto; padding: 40px 24px; }
+    h1 { font-size: 2.2rem; font-weight: 800; margin-bottom: 8px; color: white; }
+    .sub { color: var(--muted); margin-bottom: 36px; font-size: 1.05rem; }
+    
+    .controls { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; margin-bottom: 40px; }
+    .controls h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 20px; color: white; }
+    .form-row { display: flex; gap: 20px; align-items: flex-end; flex-wrap: wrap; }
+    .form-group { display: flex; flex-direction: column; gap: 8px; }
+    label { font-size: 0.85rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
     input[type="text"], input[type="number"] {
-      background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
-      color: var(--text); font-family: 'Outfit', sans-serif; font-size: 0.9rem;
-      padding: 10px 14px; outline: none; transition: border-color 0.2s; width: 180px;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text); font-family: 'Outfit', sans-serif; font-size: 0.95rem;
+      padding: 12px 14px; outline: none; transition: all 0.2s; width: 200px;
     }
-    input:focus { border-color: var(--accent); }
+    input[type="text"] { width: 320px; }
+    input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(242, 122, 32, 0.2); }
+    
     .gen-btn {
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      background: var(--accent);
       border: none; color: #fff; font-family: 'Outfit', sans-serif;
-      font-weight: 700; font-size: 0.95rem; padding: 10px 24px; border-radius: 8px;
-      cursor: pointer; transition: all 0.2s;
+      font-weight: 700; font-size: 1rem; padding: 12px 28px; border-radius: 8px;
+      cursor: pointer; transition: all 0.2s; height: 45px;
     }
-    .gen-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(255,107,53,0.4); }
-    .qr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
+    .gen-btn:hover { background: var(--accent-hover); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(242, 122, 32, 0.4); }
+    
+    .qr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 30px; }
+    
+    /* Table Tent Card Style (Printable & Downloadable) */
+    .qr-card-wrapper {
+      display: flex; flex-direction: column; align-items: center; gap: 15px;
+    }
+    
     .qr-card {
-      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-      padding: 20px; text-align: center; transition: transform 0.2s;
+      background: #ffffff;
+      border-radius: 4px; /* Slight radius like a printed card */
+      padding: 30px 20px;
+      width: 280px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+      /* This element is what we capture with html2canvas */
     }
-    .qr-card:hover { transform: translateY(-4px); }
-    .qr-card canvas { border-radius: 8px; background: #fff; padding: 10px; }
-    .qr-table-name { font-weight: 700; font-size: 1rem; margin: 12px 0 4px; }
-    .qr-url { color: var(--muted); font-size: 0.72rem; word-break: break-all; margin-bottom: 12px; }
+    
+    .tent-top { margin-bottom: 20px; }
+    .tent-title {
+      font-weight: 800; font-size: 1.25rem; color: var(--brand-dark);
+      letter-spacing: 1px; text-transform: uppercase;
+    }
+    
+    .tent-qr {
+      background: #fff; padding: 10px; margin: 0 auto 15px auto;
+      display: flex; justify-content: center; align-items: center;
+    }
+    
+    .tent-table-name {
+      font-weight: 700; font-size: 1.1rem; color: #333; margin-bottom: 20px;
+    }
+    
+    /* Logo in the card is horizontally centered */
+    .tent-brand-wrap {
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+    }
+    
+    .tent-brand-logo {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .tent-brand-icon {
+      width: 28px; height: 28px; background: var(--accent); border-radius: 6px;
+      position: relative; overflow: hidden;
+    }
+    .tent-brand-text {
+      font-size: 1.4rem; font-weight: 800; letter-spacing: -0.5px;
+    }
+    .tent-tagline {
+      font-size: 0.85rem; font-weight: 600; color: #555; letter-spacing: 0.3px;
+    }
+
+    /* SVG shapes for the tiny logo inside the card */
+    .qr-svg { position: absolute; fill: white; }
+    .qr-svg-1 { top: 15%; right: 15%; width: 25%; height: 25%; }
+    .qr-svg-2 { bottom: 15%; right: 15%; width: 25%; height: 25%; }
+    .qr-svg-3 { top: 15%; left: 15%; width: 25%; height: 25%; }
+    .hand-svg {
+      position: absolute; bottom: -5px; left: -2px; width: 65%; height: 65%; fill: white;
+      transform: rotate(15deg);
+    }
+
     .dl-btn {
       background: var(--bg2); border: 1px solid var(--border); color: var(--text);
-      font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 0.8rem;
-      padding: 7px 16px; border-radius: 50px; cursor: pointer; transition: all 0.2s;
+      font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 0.9rem;
+      padding: 8px 20px; border-radius: 50px; cursor: pointer; transition: all 0.2s;
+      width: 100%; display: flex; justify-content: center; align-items: center; gap: 8px;
     }
-    .dl-btn:hover { background: var(--accent); border-color: var(--accent); }
-    .nav-links { display: flex; gap: 12px; margin-left: auto; }
-    .nav-link { color: var(--muted); text-decoration: none; font-size: 0.88rem; font-weight: 600; transition: color 0.2s; }
+    .dl-btn:hover { background: var(--accent); border-color: var(--accent); color: white; transform: translateY(-1px); }
+    
+    .nav-links { display: flex; gap: 20px; margin-left: auto; }
+    .nav-link { color: var(--muted); text-decoration: none; font-size: 0.95rem; font-weight: 600; transition: color 0.2s; }
     .nav-link:hover { color: var(--accent); }
   </style>
 </head>
 <body>
   <header class="header">
-    <span style="font-size:1.5rem;">🍽️</span>
-    <span class="logo">Tap<span class="accent">2</span>Dine</span>
+    <!-- Brand Logo -->
+    <div class="brand-icon">
+      <div class="brand-hand"></div>
+    </div>
+    <span class="logo">
+      <span class="logo-tap">Tap2</span><span class="logo-dine">Dine</span>
+    </span>
     <div class="nav-links">
       <a class="nav-link" href="index.html">Customer Menu</a>
       <a class="nav-link" href="admin.html">Admin Panel</a>
@@ -71,28 +170,31 @@
 
   <div class="container">
     <h1>QR Code Generator</h1>
-    <p class="sub">Generate and print QR codes for each table. Each code links customers directly to your menu.</p>
+    <p class="sub">Generate and print QR table tents. Each stylized code links customers directly to your restaurant's digital menu.</p>
 
     <div class="controls">
       <h2>⚙️ Settings</h2>
       <div class="form-row">
         <div class="form-group">
-          <label>Base URL</label>
-          <input type="text" id="baseUrl" value="" placeholder="auto-detected" style="width:280px;" />
+          <label>Base App URL</label>
+          <input type="text" id="baseUrl" value="" placeholder="auto-detected" />
         </div>
         <div class="form-group">
           <label>Number of Tables</label>
-          <input type="number" id="tableCount" value="10" min="1" max="50" />
+          <input type="number" id="tableCount" value="10" min="1" max="100" />
         </div>
-        <button class="gen-btn" onclick="generateQRs()">🔄 Generate QR Codes</button>
+        <button class="gen-btn" onclick="generateQRs()">🔄 Generate Print-Ready QRs</button>
       </div>
     </div>
 
+    <!-- Container for the generated cards -->
     <div class="qr-grid" id="qrGrid"></div>
   </div>
 
-  <!-- QR library via CDN -->
+  <!-- Libraries: qrcode.js for the QR, html2canvas for capturing the styling -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  
   <script>
     // Auto-detect base URL (replace qr.html → index.html)
     const auto = window.location.href.replace('qr.html','index.html').split('?')[0];
@@ -104,41 +206,103 @@
       const grid  = document.getElementById('qrGrid');
       grid.innerHTML = '';
 
-      for (let t = 1; t <= count; t++) {
-        const url  = `${base}?table=${t}`;
-        const card = document.createElement('div');
-        card.className = 'qr-card';
-        const canvasWrap = document.createElement('div');
-        canvasWrap.id = `qr-${t}`;
-        card.innerHTML = `
-          <div id="qr-${t}"></div>
-          <div class="qr-table-name">Table ${t}</div>
-          <div class="qr-url">${url}</div>
-          <button class="dl-btn" onclick="downloadQR(${t})">⬇ Download</button>`;
-        grid.appendChild(card);
+      // The SVG logo used in the cards
+      const logoIconHTML = `
+        <div class="tent-brand-icon">
+          <svg class="qr-svg qr-svg-1" viewBox="0 0 10 10"><rect width="10" height="10" rx="2"/></svg>
+          <svg class="qr-svg qr-svg-2" viewBox="0 0 10 10"><rect width="10" height="10" rx="2"/></svg>
+          <svg class="qr-svg qr-svg-3" viewBox="0 0 10 10"><rect width="10" height="10" rx="2"/></svg>
+          <svg class="hand-svg" viewBox="0 0 24 24">
+            <path d="M9 11.24V7.5C9 6.12 10.12 5 11.5 5C12.88 5 14 6.12 14 7.5v3.74c1.21-.81 2-2.18 2-3.74C16 4.46 13.54 2 10.5 2S5 4.46 5 7.5c0 1.56.79 2.93 2 3.74v5.26c0 1.93 1.57 3.5 3.5 3.5h4.17c1.45 0 2.76-.92 3.26-2.29l1.83-5.04c.26-.71-.27-1.47-1.02-1.47H15" />
+          </svg>
+        </div>
+      `;
 
+      for (let t = 1; t <= count; t++) {
+        const url = `${base}?table=${t}`;
+        
+        const wrapper = document.createElement('div');
+        wrapper.className = 'qr-card-wrapper';
+        
+        const cardHTML = `
+          <div class="qr-card" id="card-${t}">
+            <div class="tent-top">
+              <div class="tent-title">SCAN TO ORDER</div>
+            </div>
+            <div class="tent-qr" id="qr-${t}"></div>
+            <div class="tent-table-name">Table ${t}</div>
+            
+            <div class="tent-brand-wrap">
+              <div class="tent-brand-logo">
+                ${logoIconHTML}
+                <div class="tent-brand-text">
+                  <span class="logo-tap">Tap2</span><span class="logo-dine">Dine</span>
+                </div>
+              </div>
+              <div class="tent-tagline">Tap. Scan. Order.</div>
+            </div>
+          </div>
+          <button class="dl-btn" onclick="downloadCard(${t})">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            Download Card
+          </button>
+        `;
+        wrapper.innerHTML = cardHTML;
+        grid.appendChild(wrapper);
+
+        // Generate the QR code using qrcode.js
         setTimeout(() => {
           new QRCode(document.getElementById(`qr-${t}`), {
-            text: url, width: 160, height: 160,
-            colorDark: '#0f0f13', colorLight: '#ffffff',
+            text: url,
+            width: 180, 
+            height: 180,
+            colorDark: '#12213D', // Dark blue QR code for better brand fit
+            colorLight: '#ffffff',
             correctLevel: QRCode.CorrectLevel.H
           });
         }, t * 30);
       }
     }
 
-    function downloadQR(t) {
-      const wrap = document.getElementById(`qr-${t}`);
-      const img  = wrap.querySelector('img') || wrap.querySelector('canvas');
-      if (!img) return;
-      const link = document.createElement('a');
-      link.download = `table-${t}-qr.png`;
-      link.href = img.src || img.toDataURL();
-      link.click();
+    // Capture the entire stylized card using html2canvas and download it
+    function downloadCard(t) {
+      const cardElement = document.getElementById(`card-${t}`);
+      const btn = event.currentTarget;
+      const originalText = btn.innerHTML;
+      btn.innerHTML = '⏳ Processing...';
+      btn.style.opacity = '0.7';
+      btn.disabled = true;
+
+      // Use a scale of 3 for a high-res printable image
+      html2canvas(cardElement, { 
+        scale: 3,
+        useCORS: true,
+        backgroundColor: '#ffffff'
+      }).then(canvas => {
+        const link = document.createElement('a');
+        link.download = `Tap2Dine_Table_${t}_Tent.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        
+        btn.innerHTML = '✅ Downloaded!';
+        setTimeout(() => {
+          btn.innerHTML = originalText;
+          btn.style.opacity = '1';
+          btn.disabled = false;
+        }, 2000);
+      }).catch(err => {
+        console.error('Error generating card image:', err);
+        btn.innerHTML = '❌ Error';
+        setTimeout(() => {
+          btn.innerHTML = originalText;
+          btn.style.opacity = '1';
+          btn.disabled = false;
+        }, 2000);
+      });
     }
 
     // Auto-generate on load
-    generateQRs();
+    window.addEventListener('DOMContentLoaded', generateQRs);
   </script>
 </body>
 </html>
