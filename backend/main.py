@@ -2,10 +2,24 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from models import MenuItem, OrderCreate, OrderStatusUpdate, WaiterCall
+from models import MenuItem, OrderCreate, OrderStatusUpdate, WaiterCall, CreatePaymentOrder, VerifyPayment
 from database import db
 import uvicorn
 import json
+import hmac
+import hashlib
+import os
+
+# ── RAZORPAY CLIENT (keys from environment) ───────────────────────────────────
+try:
+    import razorpay
+    RAZORPAY_KEY_ID     = os.getenv("RAZORPAY_KEY_ID",     "YOUR_KEY_ID")
+    RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "YOUR_KEY_SECRET")
+    rzp_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
+except ImportError:
+    rzp_client = None
+    RAZORPAY_KEY_ID     = ""
+    RAZORPAY_KEY_SECRET = ""
 
 app = FastAPI(title="Tap2Dine API", version="2.0.0")
 
@@ -175,6 +189,50 @@ async def waiter_call(call: WaiterCall):
     call_data = {"table": call.table, "reason": call.reason or "Assistance needed"}
     await manager.broadcast("waiter_call", call_data)
     return {"message": f"Waiter notified for Table {call.table}"}
+
+
+# ── RAZORPAY PAYMENT ─────────────────────────────────────────────────────────
+@app.post("/api/payment/create-order", status_code=201)
+def create_payment_order(body: CreatePaymentOrder):
+    """Create a Razorpay order for the given INR amount."""
+    if rzp_client is None:
+        raise HTTPException(status_code=503, detail="Razorpay SDK not installed")
+    if RAZORPAY_KEY_ID == "YOUR_KEY_ID":
+        raise HTTPException(status_code=503, detail="Razorpay keys not configured")
+    try:
+        order = rzp_client.order.create({
+            "amount":   body.amount * 100,   # paise
+            "currency": body.currency,
+            "receipt":  body.receipt or f"rcpt_{body.amount}",
+            "payment_capture": 1,
+        })
+        return {
+            "order_id":  order["id"],
+            "amount":    order["amount"],
+            "currency":  order["currency"],
+            "key_id":    RAZORPAY_KEY_ID,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/payment/verify")
+def verify_payment(body: VerifyPayment):
+    """Verify Razorpay payment signature (HMAC-SHA256)."""
+    if not RAZORPAY_KEY_SECRET or RAZORPAY_KEY_SECRET == "YOUR_KEY_SECRET":
+        raise HTTPException(status_code=503, detail="Razorpay secret not configured")
+
+    msg     = f"{body.razorpay_order_id}|{body.razorpay_payment_id}"
+    digest  = hmac.new(
+        RAZORPAY_KEY_SECRET.encode(),
+        msg.encode(),
+        hashlib.sha256
+    ).hexdigest()
+
+    if hmac.compare_digest(digest, body.razorpay_signature):
+        return {"status": "success", "message": "Payment verified ✅"}
+    else:
+        raise HTTPException(status_code=400, detail="Signature mismatch – payment invalid")
 
 
 # ── RUN ───────────────────────────────────────────────────────────────────────

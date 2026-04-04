@@ -358,28 +358,161 @@ function cartQty(id, delta) {
   renderMenu(getCurrentItems());
 }
 
-// ── PLACE ORDER → POST /api/orders ───────────────────────────────────────────
-async function placeOrder() {
+// ── PAYMENT MODAL ─────────────────────────────────────────────────────────────
+function openPaymentModal() {
   const keys = Object.keys(cart).map(Number);
   if (keys.length === 0) return;
 
-  const note  = document.getElementById('orderNote').value.trim();
+  // Compute total to display in the modal
+  const subtotal = keys.reduce((s, id) => {
+    const item = MENU.find(m => m.id === Number(id));
+    return s + (item ? item.price * cart[id] : 0);
+  }, 0);
+  const tax   = Math.round(subtotal * 0.05);
+  const total = subtotal + tax;
+
+  document.getElementById('paymentModalTotal').textContent = `Total: ₹${total}`;
+  document.getElementById('paymentModal').style.display    = 'flex';
+}
+
+function closePaymentModal() {
+  document.getElementById('paymentModal').style.display = 'none';
+}
+
+function closePaymentModalOutside(e) {
+  if (e.target.id === 'paymentModal') closePaymentModal();
+}
+
+// ── PAY ONLINE (RAZORPAY) ─────────────────────────────────────────────────────
+async function payOnline() {
+  const btn = document.getElementById('payOnlineBtn');
+  btn.disabled    = true;
+  btn.textContent = '⏳ Creating order…';
+
+  const keys = Object.keys(cart).map(Number);
+  const note = document.getElementById('orderNote').value.trim();
   const items = keys.map(id => {
     const item = MENU.find(m => m.id === id);
     return { id, name: item.name, emoji: item.emoji, price: item.price, qty: cart[id] };
   });
-
   const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
   const tax      = Math.round(subtotal * 0.05);
   const total    = subtotal + tax;
 
-  const payload  = { table: tableNumber, items, subtotal, tax, total, note };
+  try {
+    // 1️⃣ Create Razorpay order on backend
+    const res = await fetch(`${API}/payment/create-order`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ amount: total }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Could not create payment order');
+    }
+
+    const rzpOrder = await res.json();
+
+    btn.disabled    = false;
+    btn.textContent = '📱 Pay Online';
+    closePaymentModal();
+
+    // 2️⃣ Open Razorpay checkout widget
+    const options = {
+      key:         rzpOrder.key_id,
+      amount:      rzpOrder.amount,
+      currency:    rzpOrder.currency,
+      name:        'Tap2Dine',
+      description: `Table ${tableNumber} — ${items.length} item(s)`,
+      order_id:    rzpOrder.order_id,
+      theme:       { color: '#ff6b35' },
+
+      prefill: {
+        name:    '',
+        email:   '',
+        contact: '',
+      },
+
+      // 3️⃣ On payment success → verify on backend → place order
+      handler: async function (response) {
+        try {
+          showToast('🔐 Verifying payment…');
+
+          const verifyRes = await fetch(`${API}/payment/verify`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({
+              razorpay_order_id:   response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature:  response.razorpay_signature,
+            }),
+          });
+
+          if (!verifyRes.ok) throw new Error('Signature verification failed');
+
+          // 4️⃣ Place the order (with payment proof)
+          await submitOrder({
+            items, subtotal, tax, total, note,
+            payment_method:      'online',
+            razorpay_order_id:   response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature:  response.razorpay_signature,
+          });
+
+        } catch (err) {
+          showToast('❌ Payment verification failed. Contact staff.');
+          console.error(err);
+        }
+      },
+
+      modal: {
+        ondismiss: () => showToast('⚡ Payment cancelled'),
+      },
+    };
+
+    const rzp = new Razorpay(options);
+    rzp.on('payment.failed', () => {
+      showToast('❌ Payment failed. Please try again.');
+    });
+    rzp.open();
+
+  } catch (err) {
+    btn.disabled    = false;
+    btn.textContent = '📱 Pay Online';
+    showToast(`⚠️ ${err.message}`);
+    console.error(err);
+  }
+}
+
+// ── PAY AT HOTEL (CASH) ───────────────────────────────────────────────────────
+async function payAtHotel() {
+  closePaymentModal();
+
+  const keys = Object.keys(cart).map(Number);
+  const note = document.getElementById('orderNote').value.trim();
+  const items = keys.map(id => {
+    const item = MENU.find(m => m.id === id);
+    return { id, name: item.name, emoji: item.emoji, price: item.price, qty: cart[id] };
+  });
+  const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+  const tax      = Math.round(subtotal * 0.05);
+  const total    = subtotal + tax;
+
+  await submitOrder({ items, subtotal, tax, total, note, payment_method: 'cash' });
+}
+
+// ── SUBMIT ORDER → POST /api/orders ──────────────────────────────────────────
+async function submitOrder(paymentData) {
+  const placeBtn = document.querySelector('.place-order-btn');
+  if (placeBtn) { placeBtn.textContent = 'Sending… ⏳'; placeBtn.disabled = true; }
+
+  const payload = {
+    table: tableNumber,
+    ...paymentData,
+  };
 
   try {
-    const btn = document.querySelector('.place-order-btn');
-    btn.textContent = 'Sending... ⏳';
-    btn.disabled    = true;
-
     const res  = await fetch(`${API}/orders`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -389,19 +522,42 @@ async function placeOrder() {
     if (!res.ok) throw new Error(`Server error ${res.status}`);
     const data = await res.json();
 
-    // Track this order for live status updates
     activeOrderId = data.order.id;
 
-    // Save to session history
-    orderHistory.push({ ...data.order, time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) });
-    const hBtn = document.getElementById('historyBtn');
-    if (hBtn) { hBtn.style.display = 'flex'; hBtn.textContent = `📋 My Orders (${orderHistory.length})`; }
+    orderHistory.push({
+      ...data.order,
+      payment_method: paymentData.payment_method || 'cash',
+      time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+    });
 
+    const hBtn = document.getElementById('historyBtn');
+    if (hBtn) {
+      hBtn.style.display = 'flex';
+      hBtn.textContent   = `📋 My Orders (${orderHistory.length})`;
+    }
+
+    // Show success modal with payment badge
+    const method = paymentData.payment_method === 'online' ? '💳 Paid Online' : '💵 Pay at Hotel';
     document.getElementById('orderId').textContent = `#${data.order.id}`;
     document.getElementById('successModal').style.display = 'flex';
-    closeCart();
 
-    // Show live status banner
+    // Inject payment method badge into modal (idempotent)
+    let badge = document.getElementById('paymentBadge');
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.id = 'paymentBadge';
+      badge.style.cssText = `
+        display:inline-block;margin-top:10px;padding:6px 18px;
+        border-radius:50px;font-size:0.8rem;font-weight:700;letter-spacing:0.05em;
+        background:${paymentData.payment_method==='online'
+          ? 'rgba(102,126,234,0.15);color:#764ba2;border:1px solid #764ba2'
+          : 'rgba(17,153,142,0.15);color:#11998e;border:1px solid #11998e'};
+      `;
+      document.querySelector('.modal-card').appendChild(badge);
+    }
+    badge.textContent = method;
+
+    closeCart();
     updateStatusBanner('Pending');
 
     cart = {};
@@ -409,14 +565,11 @@ async function placeOrder() {
     updateMobileCartBar();
     renderMenu(getCurrentItems());
 
-    btn.textContent = 'Place Order 🚀';
-    btn.disabled    = false;
-
   } catch (err) {
     console.error(err);
     showToast('❌ Failed to place order. Is the server running?');
-    document.querySelector('.place-order-btn').textContent = 'Place Order 🚀';
-    document.querySelector('.place-order-btn').disabled    = false;
+  } finally {
+    if (placeBtn) { placeBtn.textContent = 'Place Order 🚀'; placeBtn.disabled = false; }
   }
 }
 

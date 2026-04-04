@@ -1,5 +1,5 @@
 /* ── Tap2Dine Service Worker ── */
-const CACHE  = 'tap2dine-v1';
+const CACHE  = 'tap2dine-v2';
 const ASSETS = [
   '/static/index.html',
   '/static/style.css',

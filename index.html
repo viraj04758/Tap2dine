@@ -17,6 +17,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
+  <!-- Razorpay Checkout -->
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 </head>
 <body>
 
@@ -131,7 +133,7 @@
       <div class="cart-note">
         <input type="text" id="orderNote" placeholder="Special instructions (optional)…" />
       </div>
-      <button class="place-order-btn" onclick="placeOrder()">
+      <button class="place-order-btn" onclick="openPaymentModal()">
         Place Order 🚀
       </button>
     </div>
@@ -201,6 +203,58 @@
   <!-- ── TOAST ── -->
   <div class="toast" id="toast"></div>
 
+  <!-- ── PAYMENT METHOD MODAL ── -->
+  <div class="modal-overlay" id="paymentModal" style="display:none;" onclick="closePaymentModalOutside(event)">
+    <div class="modal-card" style="max-width:360px;padding:32px 28px;">
+      <div class="modal-icon">💳</div>
+      <h2 style="margin-bottom:6px;">Choose Payment</h2>
+      <p id="paymentModalTotal" style="color:var(--muted);font-size:0.9rem;margin-bottom:24px;">Total: ₹0</p>
+
+      <!-- Online Pay -->
+      <button id="payOnlineBtn" onclick="payOnline()"
+        style="
+          width:100%;padding:16px;margin-bottom:12px;
+          background:linear-gradient(135deg,#667eea,#764ba2);
+          color:#fff;border:none;border-radius:16px;
+          font-size:1rem;font-weight:700;font-family:inherit;
+          cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;
+          transition:opacity 0.2s,transform 0.15s;
+          box-shadow:0 4px 20px rgba(102,126,234,0.4);"
+        onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">
+        <span style="font-size:1.3rem;">📱</span>
+        Pay Online
+        <span style="font-size:0.75rem;opacity:0.85;font-weight:500;">(UPI · Card · Net Banking)</span>
+      </button>
+
+      <!-- Cash Pay -->
+      <button onclick="payAtHotel()"
+        style="
+          width:100%;padding:16px;margin-bottom:20px;
+          background:linear-gradient(135deg,#11998e,#38ef7d);
+          color:#fff;border:none;border-radius:16px;
+          font-size:1rem;font-weight:700;font-family:inherit;
+          cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;
+          transition:opacity 0.2s,transform 0.15s;
+          box-shadow:0 4px 20px rgba(17,153,142,0.35);"
+        onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">
+        <span style="font-size:1.3rem;">💵</span>
+        Pay at Hotel
+        <span style="font-size:0.75rem;opacity:0.85;font-weight:500;">(Cash on delivery)</span>
+      </button>
+
+      <button onclick="closePaymentModal()"
+        style="
+          width:100%;padding:12px;
+          background:transparent;color:var(--muted);
+          border:1px solid var(--border);border-radius:12px;
+          font-size:0.9rem;font-family:inherit;cursor:pointer;
+          transition:border-color 0.2s;"
+        onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+        Cancel
+      </button>
+    </div>
+  </div>
+
   <!-- ── WAITER CALL MODAL ── -->
   <div class="waiter-modal-overlay" id="waiterModalOverlay" style="display:none;" onclick="closeWaiterModalOutside(event)">
     <div class="waiter-sheet">
@@ -242,6 +296,6 @@
     <div class="mcb-total" id="mcbTotal">₹0</div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=2"></script>
 </body>
 </html>
