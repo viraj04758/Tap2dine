@@ -1,0 +1,50 @@
+# Ralph Progress Log — Tap2Dine Analytics + Loyalty
+
+## Project: Tap2Dine
+## Feature: Analytics Dashboard + Customer Feedback System
+## Branch: ralph/analytics-loyalty
+
+---
+
+## Context for AI Agents
+
+### Project Structure
+- Backend: `Tap2Dine/backend/` (FastAPI, Python)
+  - `main.py` — all API endpoints
+  - `database.py` — Database class with SQLite
+  - `models.py` — Pydantic models
+  - `ai.py` — Gemini AI recommendations
+  - `.env` — environment variables (GEMINI_API_KEY, RAZORPAY keys)
+- Frontend: `Tap2Dine/` (Vanilla HTML/CSS/JS)
+  - `index.html` — customer menu page
+  - `admin.html` — admin dashboard
+  - `style.css` — main styles (dark theme)
+  - `admin.css` — admin styles
+  - `app.js` — customer JS
+  - `admin.js` — admin JS
+
+### Key Patterns
+- Database: SQLite via `database.py`. All tables created in `init_db()`. Use `db.execute()` and `db.fetchall()` patterns.
+- API: FastAPI. All endpoints in `main.py`. Models in `models.py`.
+- Frontend: Vanilla JS fetch() to `http://localhost:8000/api/...`. Dark theme CSS.
+- WebSocket: `manager.broadcast(event, data)` for real-time updates.
+
+### Existing Tables
+- `restaurants`, `menu_items`, `orders`, `reservations`, `bill_splits`
+
+### Running the backend
+- `cd Tap2Dine/backend && python -m uvicorn main:app --reload`
+
+---
+
+## Iteration Log
+
+**Iteration 1: Analytics & Loyalty Feature Implementation**
+- `backend/database.py`: Added `FeedbackORM`, `add_feedback`, `get_feedback`, `get_feedback_summary`, `get_revenue_stats`, `get_peak_hours`. (US-001, US-002)
+- `backend/models.py`: Added `FeedbackCreate` model with rating validation. (US-003)
+- `backend/main.py`: Added `POST /api/feedback`, `GET /api/feedback`, `GET /api/analytics/revenue`, `GET /api/analytics/peak-hours`, `GET /api/analytics/feedback-summary`. (US-003, US-004)
+- `index.html`: Implemented 5-star feedback widget appended to the UI after checkout/end of page. Submits to POST endpoint and hides on success. (US-005)
+- `analytics.html`: Created dedicated analytics dashboard using Vanilla HTML/JS and Chart.js. Shows revenue cards, 7-day bar chart, peak hours chart, and top 5 recent customer feedback comments. Auto-refreshes every 30s. (US-006)
+- `admin.html` & `admin.js`: Upgraded Analytics tab. It now displays revenue cards (Today, Week, Month, All-Time), a link to the dedicated `analytics.html` page, and a new feedback summary section. Added `new_feedback` WebSocket listener to auto-refresh the UI without reloading. (US-007)
+
+*Status Update:* All 7 User Stories from `prd.json` have been fully completed. Backend endpoints verified successfully.

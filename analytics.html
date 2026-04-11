@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tap2Dine — Analytics Dashboard</title>
+  <meta name="description" content="Restaurant analytics dashboard — revenue, peak hours, and customer feedback." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="admin.css" />
+  <style>
+    /* ── Analytics page extras ── */
+    .an-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .an-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 22px 20px;
+    }
+    .an-card h4 {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 10px;
+    }
+    .an-card .an-num {
+      font-size: 1.8rem;
+      font-weight: 800;
+      color: var(--text);
+      line-height: 1;
+    }
+    .an-card .an-sub {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .an-card.accent-card {
+      background: linear-gradient(135deg, rgba(249,115,22,0.15), rgba(234,88,12,0.08));
+      border-color: rgba(249,115,22,0.3);
+    }
+    .chart-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .chart-card h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 20px;
+      color: var(--text);
+    }
+    .chart-wrap {
+      position: relative;
+      height: 220px;
+    }
+    .fb-summary-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .fb-avg-big {
+      font-size: 3rem;
+      font-weight: 800;
+      color: #f97316;
+      line-height: 1;
+    }
+    .fb-stars-display {
+      font-size: 1.4rem;
+      letter-spacing: 2px;
+    }
+    .fb-count {
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+    .fb-review-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 10px;
+    }
+    .fb-review-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .fb-review-stars {
+      color: #f97316;
+      font-size: 0.95rem;
+    }
+    .fb-review-meta {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .fb-review-comment {
+      font-size: 0.9rem;
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .refresh-badge {
+      font-size: 0.75rem;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.85rem;
+      color: var(--muted);
+      text-decoration: none;
+      padding: 8px 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .back-link:hover { color: var(--text); border-color: var(--accent); }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media(max-width:700px) { .two-col { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <span>🍽️</span>
+      <span>Tap<span class="accent">2</span>Dine</span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a href="admin.html" class="nav-item" style="text-decoration:none; display:flex; align-items:center; gap:10px; padding:12px 16px;">
+        <span class="nav-icon">📋</span> Live Orders
+      </a>
+      <a href="admin.html#kitchen" class="nav-item" style="text-decoration:none; display:flex; align-items:center; gap:10px; padding:12px 16px;">
+        <span class="nav-icon">👨‍🍳</span> Kitchen View
+      </a>
+      <a href="admin.html#menu" class="nav-item" style="text-decoration:none; display:flex; align-items:center; gap:10px; padding:12px 16px;">
+        <span class="nav-icon">🍕</span> Menu Manager
+      </a>
+      <a href="analytics.html" class="nav-item active" style="text-decoration:none; display:flex; align-items:center; gap:10px; padding:12px 16px;">
+        <span class="nav-icon">📊</span> Analytics
+      </a>
+      <a href="admin.html#reservations" class="nav-item" style="text-decoration:none; display:flex; align-items:center; gap:10px; padding:12px 16px;">
+        <span class="nav-icon">📅</span> Reservations
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <a href="index.html?table=1" class="menu-link" target="_blank">↗ View Customer Menu</a>
+    </div>
+  </aside>
+
+  <!-- ── MAIN ── -->
+  <main class="main">
+
+    <!-- ── TOP BAR ── -->
+    <header class="topbar">
+      <div>
+        <h1 class="topbar-title">📊 Analytics Dashboard</h1>
+        <p class="topbar-sub">Revenue insights, peak hours, and customer feedback</p>
+      </div>
+      <div class="topbar-actions">
+        <span class="refresh-badge" id="lastRefresh">⟳ Auto-refreshes every 30s</span>
+        <a href="admin.html" class="back-link">← Back to Admin</a>
+      </div>
+    </header>
+
+    <!-- ── REVENUE CARDS ── -->
+    <div class="an-grid">
+      <div class="an-card accent-card">
+        <h4>📅 Today</h4>
+        <div class="an-num" id="revToday">₹—</div>
+        <div class="an-sub">Revenue today</div>
+      </div>
+      <div class="an-card">
+        <h4>📆 This Week</h4>
+        <div class="an-num" id="revWeek">₹—</div>
+        <div class="an-sub">Mon – today</div>
+      </div>
+      <div class="an-card">
+        <h4>🗓️ This Month</h4>
+        <div class="an-num" id="revMonth">₹—</div>
+        <div class="an-sub">Month to date</div>
+      </div>
+      <div class="an-card">
+        <h4>💰 All Time</h4>
+        <div class="an-num" id="revTotal">₹—</div>
+        <div class="an-sub">Total revenue</div>
+      </div>
+    </div>
+
+    <!-- ── CHARTS ROW ── -->
+    <div class="two-col">
+
+      <!-- Daily Revenue Chart -->
+      <div class="chart-card">
+        <h3>📈 Daily Revenue (Last 7 Days)</h3>
+        <div class="chart-wrap">
+          <canvas id="revenueChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Peak Hours Chart -->
+      <div class="chart-card">
+        <h3>🕐 Peak Hours</h3>
+        <div class="chart-wrap">
+          <canvas id="peakChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── FEEDBACK SUMMARY ── -->
+    <div class="chart-card">
+      <h3>⭐ Customer Feedback</h3>
+      <div class="fb-summary-row">
+        <div class="fb-avg-big" id="fbAvg">—</div>
+        <div>
+          <div class="fb-stars-display" id="fbStarsDisplay">☆☆☆☆☆</div>
+          <div class="fb-count" id="fbCount">No reviews yet</div>
+        </div>
+      </div>
+      <div id="fbReviewsList">
+        <p style="color:var(--muted); font-size:0.88rem;">No feedback yet.</p>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    const params   = new URLSearchParams(window.location.search);
+    const RID      = params.get('restaurant') || 'tap2dine';
+    const BASE     = 'http://localhost:8000';
+    let revenueChartInst = null;
+    let peakChartInst    = null;
+
+    function fmt(n) {
+      if (n >= 100000) return '₹' + (n / 100000).toFixed(1) + 'L';
+      if (n >= 1000)   return '₹' + (n / 1000).toFixed(1) + 'k';
+      return '₹' + n;
+    }
+
+    function starsHtml(rating) {
+      const full  = Math.round(rating);
+      let s = '';
+      for (let i = 1; i <= 5; i++) s += i <= full ? '★' : '☆';
+      return s;
+    }
+
+    async function loadRevenue() {
+      try {
+        const res  = await fetch(`${BASE}/api/analytics/revenue?restaurant_id=${RID}`);
+        const data = await res.json();
+        document.getElementById('revToday').textContent  = fmt(data.revenue_today);
+        document.getElementById('revWeek').textContent   = fmt(data.revenue_this_week);
+        document.getElementById('revMonth').textContent  = fmt(data.revenue_this_month);
+        document.getElementById('revTotal').textContent  = fmt(data.total_revenue);
+
+        const labels = data.daily_revenue.map(d => d.date);
+        const values = data.daily_revenue.map(d => d.revenue);
+
+        if (revenueChartInst) revenueChartInst.destroy();
+        revenueChartInst = new Chart(document.getElementById('revenueChart'), {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Revenue (₹)',
+              data: values,
+              backgroundColor: 'rgba(249,115,22,0.75)',
+              borderRadius: 6,
+              borderSkipped: false,
+            }],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { ticks: { color: '#888', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+              y: { ticks: { color: '#888', font: { size: 11 }, callback: v => '₹' + v }, grid: { color: 'rgba(255,255,255,0.05)' } },
+            },
+          },
+        });
+      } catch (e) { console.error('Revenue load error', e); }
+    }
+
+    async function loadPeakHours() {
+      try {
+        const res  = await fetch(`${BASE}/api/analytics/peak-hours?restaurant_id=${RID}`);
+        const data = await res.json();
+
+        // Only show hours 7am–11pm for a cleaner chart
+        const hours  = data.peak_hours.filter(h => h.hour >= 7 && h.hour <= 23);
+        const labels = hours.map(h => {
+          const ampm = h.hour >= 12 ? 'pm' : 'am';
+          const hr   = h.hour > 12 ? h.hour - 12 : h.hour || 12;
+          return `${hr}${ampm}`;
+        });
+        const values = hours.map(h => h.count);
+        const bgColors = hours.map(h =>
+          h.hour === data.busiest_hour
+            ? 'rgba(249,115,22,0.9)'
+            : 'rgba(249,115,22,0.35)'
+        );
+
+        if (peakChartInst) peakChartInst.destroy();
+        peakChartInst = new Chart(document.getElementById('peakChart'), {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Orders',
+              data: values,
+              backgroundColor: bgColors,
+              borderRadius: 5,
+              borderSkipped: false,
+            }],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { ticks: { color: '#888', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+              y: { ticks: { color: '#888', font: { size: 11 }, stepSize: 1 }, grid: { color: 'rgba(255,255,255,0.05)' } },
+            },
+          },
+        });
+      } catch (e) { console.error('Peak hours error', e); }
+    }
+
+    async function loadFeedback() {
+      try {
+        const res  = await fetch(`${BASE}/api/analytics/feedback-summary?restaurant_id=${RID}`);
+        const data = await res.json();
+
+        document.getElementById('fbAvg').textContent          = data.count ? data.avg_rating.toFixed(1) : '—';
+        document.getElementById('fbStarsDisplay').textContent = data.count ? starsHtml(data.avg_rating) : '☆☆☆☆☆';
+        document.getElementById('fbCount').textContent        = data.count
+          ? `${data.count} review${data.count !== 1 ? 's' : ''}`
+          : 'No reviews yet';
+
+        const list = document.getElementById('fbReviewsList');
+        if (!data.recent || data.recent.length === 0) {
+          list.innerHTML = '<p style="color:var(--muted);font-size:.88rem;">No feedback yet.</p>';
+          return;
+        }
+        list.innerHTML = data.recent.map(r => `
+          <div class="fb-review-card">
+            <div class="fb-review-header">
+              <span class="fb-review-stars">${starsHtml(r.rating)}</span>
+              <span class="fb-review-meta">
+                ${r.table_no ? 'Table ' + r.table_no + ' · ' : ''}
+                ${new Date(r.created_at).toLocaleDateString('en-IN', {day:'numeric',month:'short', hour:'2-digit', minute:'2-digit'})}
+              </span>
+            </div>
+            ${r.comment ? `<p class="fb-review-comment">"${r.comment}"</p>` : '<p class="fb-review-comment" style="color:var(--muted);font-style:italic;">No comment left.</p>'}
+          </div>
+        `).join('');
+      } catch (e) { console.error('Feedback error', e); }
+    }
+
+    async function refreshAll() {
+      await Promise.all([loadRevenue(), loadPeakHours(), loadFeedback()]);
+      const now = new Date();
+      document.getElementById('lastRefresh').textContent =
+        `⟳ Last updated ${now.toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit'})}`;
+    }
+
+    // Initial load + auto-refresh every 30s
+    refreshAll();
+    setInterval(refreshAll, 30000);
+  </script>
+</body>
+</html>

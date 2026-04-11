@@ -3,17 +3,20 @@ const API = 'http://localhost:8000/api';
 const WS  = 'ws://localhost:8000/ws';
 
 // ── URL TABLE DETECTION ───────────────────────────────────────────────────────
-const params      = new URLSearchParams(window.location.search);
-const tableNumber = params.get('table') || '4';
+const params       = new URLSearchParams(window.location.search);
+const tableNumber  = params.get('table') || '4';
+const restaurantId = params.get('restaurant_id') || 'tap2dine';
 document.getElementById('tableBadge').textContent = `Table ${tableNumber}`;
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
 let MENU          = [];
 let cart          = {};   // { itemId: qty }
 let currentFilter = 'all';
-let activeOrderId = null; // track the last placed order for live status
-let orderHistory  = [];   // session order history
+let activeOrderId = null;
+let lastPlacedOrder = null;  // for bill split
+let orderHistory  = [];
 let waiterCooldown = false;
+let aiRecommendTimer = null;
 
 // ── WEBSOCKET: LIVE STATUS UPDATES ───────────────────────────────────────────
 let ws;
@@ -80,11 +83,11 @@ function updateStatusBanner(status) {
 // ── FETCH MENU FROM API ───────────────────────────────────────────────────────
 async function loadMenu() {
   try {
-    const res  = await fetch(`${API}/menu`);
+    const res  = await fetch(`${API}/menu?restaurant_id=${restaurantId}`);
     const data = await res.json();
     MENU = data.items;
     renderMenu(getCurrentItems());
-    updateRecommendations(); // initial (empty cart)
+    scheduleAiRecommendations();
   } catch (err) {
     console.error('Failed to load menu:', err);
     showToast('⚠️ Cannot reach server. Is the backend running?');
@@ -94,7 +97,7 @@ async function loadMenu() {
 // ── POPULAR / TRENDING STRIP ─────────────────────────────────────────────
 async function loadPopular() {
   try {
-    const data = await fetch(`${API}/popular`).then(r => r.json());
+    const data  = await fetch(`${API}/popular?restaurant_id=${restaurantId}`).then(r => r.json());
     const sect  = document.getElementById('popularSection');
     const scroll = document.getElementById('popularScroll');
     const badge  = document.getElementById('popularBadge');
@@ -112,69 +115,62 @@ async function loadPopular() {
     `).join('');
 
     sect.style.display = 'block';
-  } catch (_) {
-    // Non-critical — fail silently
-  }
+  } catch (_) {}
 }
 
-// ── SMART RECOMMENDATIONS ────────────────────────────────────────────────
-// Rule table: if cart has these categories, suggest these
-const PAIR_RULES = [
-  { if: ['starters'],                         suggest: ['mains', 'drinks'] },
-  { if: ['mains'],                            suggest: ['desserts', 'drinks'] },
-  { if: ['pizza', 'burgers'],                 suggest: ['drinks', 'desserts'] },
-  { if: ['desserts'],                         suggest: ['drinks'] },
-  { if: ['drinks'],                           suggest: ['starters'] },
-  { if: ['starters', 'mains'],               suggest: ['desserts', 'drinks'] },
-  { if: ['starters', 'mains', 'desserts'],   suggest: ['drinks'] },
-];
+// ── AI RECOMMENDATIONS (Gemini Flash via backend) ────────────────────────────
+function scheduleAiRecommendations() {
+  clearTimeout(aiRecommendTimer);
+  aiRecommendTimer = setTimeout(fetchAiRecommendations, 700);
+}
 
-function updateRecommendations() {
+async function fetchAiRecommendations() {
   const sect   = document.getElementById('recommendSection');
   const scroll = document.getElementById('recommendScroll');
   if (!sect || !MENU.length) return;
 
-  // Identify what categories are currently in cart
-  const cartIds   = Object.keys(cart).map(Number);
-  const cartCats  = [...new Set(cartIds.map(id => {
-    const item = MENU.find(m => m.id === id);
-    return item ? item.cat : null;
-  }).filter(Boolean))];
-
-  if (cartCats.length === 0) { sect.style.display = 'none'; return; }
-
-  // Find best matching rule
-  let suggestCats = [];
-  for (const rule of PAIR_RULES) {
-    if (rule.if.every(cat => cartCats.includes(cat))) {
-      suggestCats = rule.suggest;
-      break;
-    }
-  }
-  // Fallback: suggest anything not already in cart
-  if (suggestCats.length === 0) {
-    suggestCats = ['mains', 'desserts', 'drinks', 'starters', 'pizza', 'burgers']
-      .filter(c => !cartCats.includes(c));
-  }
-
-  // Find items to recommend that aren't already in cart
-  const candidates = MENU.filter(item =>
-    suggestCats.includes(item.cat) && !cart[item.id]
-  ).slice(0, 6);
-
-  if (candidates.length === 0) { sect.style.display = 'none'; return; }
-
-  scroll.innerHTML = candidates.map(item => `
-    <div class="rec-card" onclick="addToCartById(${item.id})">
-      <div class="rec-emoji">${item.emoji}</div>
-      <div class="rec-name">${item.name}</div>
-      <div class="rec-price">₹${item.price}</div>
-      <button class="rec-add">+ Add</button>
-    </div>
-  `).join('');
+  const cartIds = Object.keys(cart).map(Number);
+  if (cartIds.length === 0) { sect.style.display = 'none'; return; }
 
   sect.style.display = 'block';
+  scroll.innerHTML = `<div style="display:flex;gap:8px;">${[1,2,3].map(() =>
+    `<div style="width:140px;height:90px;background:var(--card2);border-radius:14px;opacity:.5;animation:aiPulse 1.2s infinite;"></div>`
+  ).join('')}</div>`;
+
+  try {
+    const cartItems = cartIds.map(id => {
+      const item = MENU.find(m => m.id === id);
+      return { id, name: item.name, emoji: item.emoji, price: item.price, qty: cart[id], cat: item.cat };
+    });
+    const res  = await fetch(`${API}/recommendations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cart: cartItems, restaurant_id: restaurantId }),
+    });
+    const data = await res.json();
+    const recs = data.recommendations;
+    if (!recs || recs.length === 0) { sect.style.display = 'none'; return; }
+
+    const titleEl = sect.querySelector('.strip-title');
+    if (titleEl) titleEl.innerHTML = '🤖 AI Picks For You <span style="font-size:.65rem;background:rgba(99,102,241,.15);color:#818cf8;padding:2px 8px;border-radius:50px;margin-left:6px;font-weight:700;">Gemini</span>';
+
+    scroll.innerHTML = recs.map(item => `
+      <div class="rec-card" onclick="addToCartById(${item.id})">
+        <div class="rec-emoji">${item.emoji}</div>
+        <div class="rec-name">${item.name}</div>
+        <div style="font-size:.7rem;color:var(--muted);margin-bottom:4px;line-height:1.3;">${item.reason}</div>
+        <div class="rec-price">₹${item.price}</div>
+        <button class="rec-add">+ Add</button>
+      </div>`).join('');
+    sect.style.display = 'block';
+  } catch { sect.style.display = 'none'; }
 }
+
+const _recStyle = document.createElement('style');
+_recStyle.textContent = `@keyframes aiPulse { 0%,100%{opacity:.5} 50%{opacity:.85} }`;
+document.head.appendChild(_recStyle);
+
+function updateRecommendations() { scheduleAiRecommendations(); }
 
 // Helper: add to cart by ID then update UI
 function addToCartById(id) {
@@ -522,7 +518,8 @@ async function submitOrder(paymentData) {
     if (!res.ok) throw new Error(`Server error ${res.status}`);
     const data = await res.json();
 
-    activeOrderId = data.order.id;
+    activeOrderId   = data.order.id;
+    lastPlacedOrder = data.order;
 
     orderHistory.push({
       ...data.order,
@@ -536,26 +533,31 @@ async function submitOrder(paymentData) {
       hBtn.textContent   = `📋 My Orders (${orderHistory.length})`;
     }
 
-    // Show success modal with payment badge
+    // Show success modal
     const method = paymentData.payment_method === 'online' ? '💳 Paid Online' : '💵 Pay at Hotel';
     document.getElementById('orderId').textContent = `#${data.order.id}`;
-    document.getElementById('successModal').style.display = 'flex';
 
-    // Inject payment method badge into modal (idempotent)
+    // Payment badge
     let badge = document.getElementById('paymentBadge');
     if (!badge) {
       badge = document.createElement('div');
       badge.id = 'paymentBadge';
-      badge.style.cssText = `
-        display:inline-block;margin-top:10px;padding:6px 18px;
-        border-radius:50px;font-size:0.8rem;font-weight:700;letter-spacing:0.05em;
-        background:${paymentData.payment_method==='online'
-          ? 'rgba(102,126,234,0.15);color:#764ba2;border:1px solid #764ba2'
-          : 'rgba(17,153,142,0.15);color:#11998e;border:1px solid #11998e'};
-      `;
+      badge.style.cssText = `display:inline-block;margin-top:10px;padding:6px 18px;border-radius:50px;font-size:0.8rem;font-weight:700;letter-spacing:0.05em;background:${paymentData.payment_method==='online'?'rgba(102,126,234,0.15);color:#764ba2;border:1px solid #764ba2':'rgba(17,153,142,0.15);color:#11998e;border:1px solid #11998e'};`;
       document.querySelector('.modal-card').appendChild(badge);
     }
     badge.textContent = method;
+
+    // Split Bill button
+    if (!document.getElementById('splitBillBtn')) {
+      const splitBtn = document.createElement('button');
+      splitBtn.id = 'splitBillBtn';
+      splitBtn.textContent = '💸 Split the Bill';
+      splitBtn.style.cssText = `display:block;width:100%;margin-top:14px;padding:12px;background:rgba(249,115,22,.12);color:#f97316;border:1px solid rgba(249,115,22,.4);border-radius:12px;font-size:.9rem;font-weight:700;font-family:inherit;cursor:pointer;transition:background .2s;`;
+      splitBtn.onclick = openBillSplitModal;
+      document.querySelector('.modal-card').appendChild(splitBtn);
+    }
+
+    document.getElementById('successModal').style.display = 'flex';
 
     closeCart();
     updateStatusBanner('Pending');
@@ -693,6 +695,108 @@ function showToast(msg) {
   t.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ── BILL SPLIT (CUSTOMER) ─────────────────────────────────────────────────────
+let _cSplitGuests = 2;
+let _cSplitType   = 'equal';
+
+function openBillSplitModal() {
+  if (!lastPlacedOrder) return;
+  _cSplitGuests = 2;
+  _cSplitType   = 'equal';
+
+  // Build modal HTML and inject into body
+  let m = document.getElementById('customerSplitModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'customerSplitModal';
+    m.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1200;align-items:center;justify-content:center;';
+    m.innerHTML = `
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:20px;padding:28px;width:min(440px,94vw);max-height:85vh;overflow-y:auto;">
+        <h3 style="margin-bottom:4px;">💸 Split the Bill</h3>
+        <p id="cSplitLabel" style="color:var(--muted);font-size:.85rem;margin-bottom:18px;"></p>
+
+        <div style="display:flex;gap:8px;margin-bottom:16px;">
+          <button class="c-split-type active" id="cBtnEqual" onclick="setCsplit('equal',this)">⚖️ Equal</button>
+          <button class="c-split-type" id="cBtnCustom" onclick="setCsplit('custom',this)">✏️ Custom</button>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+          <span style="font-size:.8rem;color:var(--muted);font-weight:600;">GUESTS</span>
+          <button onclick="cSplitDelta(-1)" style="width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-size:1rem;cursor:pointer;">−</button>
+          <span id="cSplitCount" style="font-weight:700;font-size:1.1rem;min-width:20px;text-align:center;">2</span>
+          <button onclick="cSplitDelta(1)"  style="width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-size:1rem;cursor:pointer;">+</button>
+        </div>
+        <div id="cSplitRows" style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px;"></div>
+        <button onclick="submitCustomerSplit()" style="width:100%;padding:14px;background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;border:none;border-radius:12px;font-size:.95rem;font-weight:700;font-family:inherit;cursor:pointer;">✅ Confirm Split</button>
+        <button onclick="document.getElementById('customerSplitModal').style.display='none'" style="width:100%;margin-top:8px;padding:12px;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:12px;font-size:.85rem;font-family:inherit;cursor:pointer;">Cancel</button>
+      </div>`;
+    const st = document.createElement('style');
+    st.textContent = `.c-split-type{flex:1;padding:9px;border-radius:10px;border:1px solid var(--border);background:var(--card2);color:var(--muted);font-family:inherit;font-size:.82rem;font-weight:600;cursor:pointer;transition:all .15s;}.c-split-type.active{background:rgba(249,115,22,.15);border-color:#f97316;color:#f97316;}`;
+    document.head.appendChild(st);
+    document.body.appendChild(m);
+  }
+
+  document.getElementById('cSplitLabel').textContent = `Order #${lastPlacedOrder.id} · Total ₹${lastPlacedOrder.total}`;
+  document.getElementById('cSplitCount').textContent = _cSplitGuests;
+  renderCsplitRows();
+  m.style.display = 'flex';
+}
+
+function setCsplit(type, btn) {
+  _cSplitType = type;
+  document.querySelectorAll('.c-split-type').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderCsplitRows();
+}
+
+function cSplitDelta(d) {
+  _cSplitGuests = Math.max(2, Math.min(10, _cSplitGuests + d));
+  document.getElementById('cSplitCount').textContent = _cSplitGuests;
+  renderCsplitRows();
+}
+
+function renderCsplitRows() {
+  const rows = document.getElementById('cSplitRows');
+  const perHead = Math.ceil(lastPlacedOrder.total / _cSplitGuests);
+  let html = '';
+  for (let i = 0; i < _cSplitGuests; i++) {
+    const amt = _cSplitType === 'equal' ? perHead : 0;
+    html += `
+      <div style="display:flex;align-items:center;gap:8px;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;">
+        <span>👤</span>
+        <input id="cs-name-${i}" placeholder="Guest ${i+1}" style="flex:1;background:transparent;border:none;color:var(--text);font-family:inherit;font-size:.9rem;outline:none;" />
+        <span style="color:var(--muted);">₹</span>
+        <input type="number" id="cs-amt-${i}" value="${amt}" min="0" style="width:68px;background:transparent;border:none;color:var(--accent);font-family:inherit;font-size:.9rem;font-weight:700;text-align:right;outline:none;" ${_cSplitType==='equal'?'readonly':''} />
+      </div>`;
+  }
+  rows.innerHTML = html;
+}
+
+async function submitCustomerSplit() {
+  const guests = [];
+  for (let i = 0; i < _cSplitGuests; i++) {
+    guests.push({
+      name:   document.getElementById(`cs-name-${i}`)?.value.trim() || `Guest ${i+1}`,
+      amount: parseInt(document.getElementById(`cs-amt-${i}`)?.value) || 0,
+      paid:   false,
+    });
+  }
+
+  try {
+    const res = await fetch(`${API}/orders/${lastPlacedOrder.id}/split`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order_id: lastPlacedOrder.id, guests, split_type: _cSplitType }),
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Split failed');
+    document.getElementById('customerSplitModal').style.display = 'none';
+
+    // Show a summary
+    const perHead = guests[0]?.amount || Math.ceil(lastPlacedOrder.total / _cSplitGuests);
+    showToast(`✅ Split created! ${_cSplitGuests} guests · ₹${perHead} each`);
+  } catch (err) { showToast(`❌ ${err.message}`); }
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────

@@ -1,0 +1,120 @@
+{
+  "project": "Tap2Dine",
+  "branchName": "ralph/analytics-loyalty",
+  "description": "Analytics Dashboard + Customer Feedback System for Tap2Dine restaurant SaaS",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add feedback table to database",
+      "description": "As a developer, I need a feedback table in SQLite so customer reviews can be stored persistently.",
+      "acceptanceCriteria": [
+        "Add 'feedback' table to database.py with columns: id (autoincrement), restaurant_id (text), table_no (text), rating (int 1-5), comment (text), created_at (timestamp default now)",
+        "Table is created in init_db() if it does not exist",
+        "db.add_feedback(data) method added to Database class",
+        "db.get_feedback(restaurant_id) method added returning list of feedback dicts",
+        "db.get_feedback_summary(restaurant_id) returns {avg_rating, count, recent: [last 5]}",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "database.py is at Tap2Dine/backend/database.py. Follow existing patterns for adding tables and methods."
+    },
+    {
+      "id": "US-002",
+      "title": "Add revenue analytics to database layer",
+      "description": "As a developer, I need revenue calculation methods so the API can serve analytics data.",
+      "acceptanceCriteria": [
+        "db.get_revenue_stats(restaurant_id) method added returning: total_revenue, revenue_today, revenue_this_week, revenue_this_month, daily_revenue (list of {date, revenue} for last 7 days)",
+        "Revenue is calculated from orders table using total field on delivered orders",
+        "db.get_peak_hours(restaurant_id) method added returning list of {hour: 0-23, count: int} for all orders",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Orders table already exists. Use SQL strftime for date grouping. Look at existing db.get_stats() for patterns."
+    },
+    {
+      "id": "US-003",
+      "title": "Add feedback API endpoints",
+      "description": "As a restaurant owner, I want to receive and view customer feedback via API.",
+      "acceptanceCriteria": [
+        "POST /api/feedback endpoint added to main.py accepting {restaurant_id, table_no, rating (1-5), comment (optional)}",
+        "GET /api/feedback endpoint added with restaurant_id query param, returns {feedback: [], count: int}",
+        "GET /api/analytics/feedback-summary endpoint added returning {avg_rating, count, recent: []}",
+        "FeedbackCreate model added to models.py with validation (rating must be 1-5)",
+        "POST /api/feedback broadcasts 'new_feedback' event via WebSocket manager",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Follow exact same pattern as existing endpoints in main.py. Add model to models.py."
+    },
+    {
+      "id": "US-004",
+      "title": "Add revenue analytics API endpoints",
+      "description": "As a restaurant owner, I want to see revenue statistics and peak hours via API.",
+      "acceptanceCriteria": [
+        "GET /api/analytics/revenue endpoint added with restaurant_id query param (default 'tap2dine')",
+        "Returns {total_revenue, revenue_today, revenue_this_week, revenue_this_month, daily_revenue: [{date, revenue}]}",
+        "GET /api/analytics/peak-hours endpoint added with restaurant_id query param",
+        "Returns {peak_hours: [{hour, count}], busiest_hour: int}",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Use db.get_revenue_stats() and db.get_peak_hours() from US-002."
+    },
+    {
+      "id": "US-005",
+      "title": "Add feedback widget to customer menu page",
+      "description": "As a customer, I want to rate my dining experience from the menu page after ordering.",
+      "acceptanceCriteria": [
+        "Add feedback section at bottom of Tap2Dine/index.html after the cart section",
+        "Section shows 5 clickable star icons (☆ / ★) for rating selection",
+        "Optional textarea for comment (placeholder: 'Tell us about your experience...')",
+        "Submit button posts to POST /api/feedback with current restaurant_id, table from URL, rating, comment",
+        "Show success message 'Thank you for your feedback! ⭐' after submission",
+        "Hide form after successful submission",
+        "Styling matches existing style.css design (dark theme, card-based)",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "index.html uses vanilla JS. Restaurant ID and table number are read from URL params. Follow existing fetch() patterns."
+    },
+    {
+      "id": "US-006",
+      "title": "Create analytics dashboard page",
+      "description": "As a restaurant owner, I want a dedicated analytics page showing revenue, peak hours and customer feedback.",
+      "acceptanceCriteria": [
+        "New file Tap2Dine/analytics.html created",
+        "Page has 4 revenue stat cards: Today / This Week / This Month / All Time (fetched from /api/analytics/revenue)",
+        "Page has a bar chart of peak hours using Chart.js from CDN (fetched from /api/analytics/peak-hours)",
+        "Page has feedback summary section: average star rating + total count + last 5 reviews as cards",
+        "Page has same header/nav as admin.html with a back link to admin.html",
+        "Page auto-refreshes data every 30 seconds",
+        "Page uses restaurant_id from URL param (default: tap2dine)",
+        "Dark theme matching admin.html / style.css",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Follow admin.html structure. Use Chart.js CDN: https://cdn.jsdelivr.net/npm/chart.js. Fetch all data on load."
+    },
+    {
+      "id": "US-007",
+      "title": "Link analytics page from admin dashboard",
+      "description": "As a restaurant owner, I want quick access to the analytics page from the admin panel.",
+      "acceptanceCriteria": [
+        "Add 'Analytics' nav link in admin.html header nav pointing to analytics.html",
+        "Add an 'Analytics Dashboard' card/button in admin.html main content area with chart icon",
+        "Card shows today's revenue fetched from /api/analytics/revenue on page load",
+        "Clicking the card or nav link opens analytics.html",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "admin.html is at Tap2Dine/admin.html. Add to existing nav and stats grid."
+    }
+  ]
+}

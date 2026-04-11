@@ -296,6 +296,116 @@
     <div class="mcb-total" id="mcbTotal">₹0</div>
   </div>
 
+  <!-- ── FEEDBACK WIDGET ── -->
+  <section id="feedbackSection" style="
+    padding: 32px 20px 100px;
+    max-width: 600px;
+    margin: 0 auto;
+  ">
+    <div style="
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 20px;
+      padding: 28px 24px;
+      text-align: center;
+    " id="feedbackCard">
+      <div style="font-size: 2rem; margin-bottom: 8px;">😊</div>
+      <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 6px; color: #f0f0f5;">How was your experience?</h3>
+      <p style="font-size: 0.85rem; color: #888; margin-bottom: 20px;">Rate your dining experience today</p>
+
+      <!-- Star Rating -->
+      <div id="starRow" style="display: flex; justify-content: center; gap: 10px; margin-bottom: 18px;">
+        <span class="fb-star" data-val="1" onclick="selectStar(1)" style="font-size: 2rem; cursor: pointer; transition: transform 0.15s;">☆</span>
+        <span class="fb-star" data-val="2" onclick="selectStar(2)" style="font-size: 2rem; cursor: pointer; transition: transform 0.15s;">☆</span>
+        <span class="fb-star" data-val="3" onclick="selectStar(3)" style="font-size: 2rem; cursor: pointer; transition: transform 0.15s;">☆</span>
+        <span class="fb-star" data-val="4" onclick="selectStar(4)" style="font-size: 2rem; cursor: pointer; transition: transform 0.15s;">☆</span>
+        <span class="fb-star" data-val="5" onclick="selectStar(5)" style="font-size: 2rem; cursor: pointer; transition: transform 0.15s;">☆</span>
+      </div>
+
+      <textarea id="fbComment" placeholder="Tell us about your experience… (optional)" style="
+        width: 100%; box-sizing: border-box;
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 12px;
+        color: #f0f0f5;
+        font-family: inherit;
+        font-size: 0.9rem;
+        padding: 12px 14px;
+        resize: none;
+        height: 80px;
+        margin-bottom: 16px;
+        outline: none;
+      "></textarea>
+
+      <button id="fbSubmitBtn" onclick="submitFeedback()" style="
+        width: 100%;
+        padding: 14px;
+        background: linear-gradient(135deg, #f97316, #ea580c);
+        color: #fff;
+        border: none;
+        border-radius: 12px;
+        font-size: 0.95rem;
+        font-weight: 700;
+        font-family: inherit;
+        cursor: pointer;
+        transition: opacity 0.2s;
+        opacity: 0.5;
+        pointer-events: none;
+      ">⭐ Submit Feedback</button>
+    </div>
+
+    <!-- Thank you state (hidden initially) -->
+    <div id="feedbackThanks" style="display: none; text-align: center; padding: 20px;">
+      <div style="font-size: 3rem; margin-bottom: 12px;">🎉</div>
+      <h3 style="color: #f0f0f5; margin-bottom: 8px;">Thank you for your feedback!</h3>
+      <p style="color: #888; font-size: 0.9rem;">Your review helps us serve you better ⭐</p>
+    </div>
+  </section>
+
   <script src="app.js?v=2"></script>
+  <script>
+    // ── FEEDBACK WIDGET ──────────────────────────────────────────────────────
+    let _fbRating = 0;
+
+    function selectStar(val) {
+      _fbRating = val;
+      document.querySelectorAll('.fb-star').forEach((s, i) => {
+        s.textContent = i < val ? '★' : '☆';
+        s.style.color  = i < val ? '#f97316' : '#888';
+        s.style.transform = 'scale(1.1)';
+        setTimeout(() => s.style.transform = 'scale(1)', 150);
+      });
+      const btn = document.getElementById('fbSubmitBtn');
+      btn.style.opacity = '1';
+      btn.style.pointerEvents = 'auto';
+    }
+
+    async function submitFeedback() {
+      if (!_fbRating) return;
+      const params = new URLSearchParams(window.location.search);
+      const restaurantId = params.get('restaurant') || 'tap2dine';
+      const table = params.get('table') || '';
+      const comment = document.getElementById('fbComment').value.trim();
+
+      try {
+        const res = await fetch('http://localhost:8000/api/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            restaurant_id: restaurantId,
+            table_no: table,
+            rating: _fbRating,
+            comment,
+          }),
+        });
+        if (res.ok) {
+          document.getElementById('feedbackCard').style.display = 'none';
+          document.getElementById('feedbackThanks').style.display = 'block';
+        }
+      } catch (e) {
+        console.error('Feedback error', e);
+      }
+    }
+  </script>
 </body>
 </html>

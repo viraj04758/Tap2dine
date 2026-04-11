@@ -32,6 +32,10 @@
       <button class="nav-item" id="navAnalytics" onclick="switchTab('analytics',this)">
         <span class="nav-icon">📊</span> Analytics
       </button>
+      <button class="nav-item" id="navReservations" onclick="switchTab('reservations',this)">
+        <span class="nav-icon">📅</span> Reservations
+        <span class="wc-badge" id="resBadge" style="display:none;">0</span>
+      </button>
       <button class="nav-item" id="navWaiter" onclick="toggleWaiterPanel()" style="margin-top:8px;border-top:1px solid var(--border);padding-top:14px;">
         <span class="nav-icon">🔔</span> Waiter Calls
         <span class="wc-badge" id="wcBadge" style="display:none;">0</span>
@@ -163,6 +167,41 @@
 
     <!-- ── ANALYTICS TAB ── -->
     <section class="tab-content" id="tabAnalytics" style="display:none;">
+
+      <!-- Link to full Analytics Dashboard -->
+      <div style="display:flex;justify-content:flex-end;margin-bottom:20px;">
+        <a href="analytics.html" target="_blank" style="
+          display:inline-flex;align-items:center;gap:8px;
+          padding:10px 20px;
+          background:linear-gradient(135deg,#f97316,#ea580c);
+          color:#fff;border-radius:12px;font-weight:700;
+          font-size:.85rem;text-decoration:none;transition:opacity .2s;
+        " onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
+          📊 Open Full Analytics Dashboard ↗
+        </a>
+      </div>
+
+      <!-- Revenue cards -->
+      <div class="stats-row" style="margin-bottom:24px;">
+        <div class="stat-card">
+          <div class="stat-num" id="anToday">₹0</div>
+          <div class="stat-label">Today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="anWeek">₹0</div>
+          <div class="stat-label">This Week</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="anMonth">₹0</div>
+          <div class="stat-label">This Month</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="anTotal">₹0</div>
+          <div class="stat-label">All Time</div>
+        </div>
+      </div>
+
+      <!-- Existing stats -->
       <div class="analytics-grid">
         <div class="analytics-card full-width">
           <h3>Revenue Overview</h3>
@@ -190,6 +229,61 @@
           <div id="tableStats"></div>
         </div>
       </div>
+
+      <!-- Customer Feedback Summary -->
+      <div class="analytics-card full-width" style="margin-top:24px;">
+        <h3>⭐ Customer Feedback</h3>
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
+          <div style="font-size:2.5rem;font-weight:800;color:#f97316;line-height:1;" id="adminFbAvg">—</div>
+          <div>
+            <div style="font-size:1.3rem;color:#f97316;" id="adminFbStars">☆☆☆☆☆</div>
+            <div style="font-size:0.8rem;color:var(--muted);" id="adminFbCount">No reviews yet</div>
+          </div>
+        </div>
+        <div id="adminFbList">
+          <p style="color:var(--muted);font-size:.88rem;">No feedback yet.</p>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ── RESERVATIONS TAB ── -->
+    <section class="tab-content" id="tabReservations" style="display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <label style="font-size:.8rem;color:var(--muted);font-weight:600;">
+            Filter by date:
+            <input type="date" id="resDateFilter"
+              style="margin-left:8px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 10px;font-family:inherit;font-size:.85rem;outline:none;"
+              onchange="loadReservations()" />
+          </label>
+          <select id="resStatusFilter"
+            style="background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 12px;font-family:inherit;font-size:.85rem;outline:none;cursor:pointer;"
+            onchange="loadReservations()">
+            <option value="">All Statuses</option>
+            <option value="Pending">Pending</option>
+            <option value="Confirmed">Confirmed</option>
+            <option value="Cancelled">Cancelled</option>
+            <option value="Completed">Completed</option>
+            <option value="No-show">No-show</option>
+          </select>
+        </div>
+        <a href="reservation.html" target="_blank"
+          style="display:inline-flex;align-items:center;gap:6px;padding:9px 18px;background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;border-radius:10px;font-weight:700;font-size:.85rem;text-decoration:none;transition:opacity .2s;"
+          onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
+          🔗 Customer Booking Page
+        </a>
+      </div>
+
+      <!-- Stats row -->
+      <div class="stats-row" style="margin-bottom:20px;">
+        <div class="stat-card"><div class="stat-num" id="resPending">0</div><div class="stat-label">Pending</div></div>
+        <div class="stat-card"><div class="stat-num" id="resConfirmed">0</div><div class="stat-label">Confirmed</div></div>
+        <div class="stat-card"><div class="stat-num" id="resCancelled">0</div><div class="stat-label">Cancelled</div></div>
+        <div class="stat-card"><div class="stat-num" id="resTotal">0</div><div class="stat-label">Total</div></div>
+      </div>
+
+      <div id="reservationsList"></div>
     </section>
 
   </main>
@@ -207,6 +301,29 @@
 
   <!-- ── TOAST ── -->
   <div class="toast" id="adminToast"></div>
+
+  <!-- ── BILL SPLIT MODAL ── -->
+  <div class="modal-overlay" id="splitModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:900;display:none;align-items:center;justify-content:center;" onclick="closeSplitModalOutside(event)">
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:20px;padding:32px;width:min(480px,94vw);max-height:85vh;overflow-y:auto;">
+      <h3 style="margin-bottom:4px;">💸 Split the Bill</h3>
+      <p id="splitOrderLabel" style="color:var(--muted);font-size:.85rem;margin-bottom:20px;"></p>
+      <div style="display:flex;gap:8px;margin-bottom:20px;">
+        <button class="split-type-btn active" id="btnEqualSplit" onclick="setSplitType('equal',this)">⚖️ Equal Split</button>
+        <button class="split-type-btn" id="btnCustomSplit" onclick="setSplitType('custom',this)">✏️ Custom</button>
+      </div>
+      <div style="margin-bottom:16px;">
+        <label style="font-size:.8rem;color:var(--muted);font-weight:600;display:block;margin-bottom:8px;">NUMBER OF GUESTS</label>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <button onclick="changeSplitGuests(-1)" style="background:var(--bar-bg);border:1px solid var(--border);color:var(--text);width:36px;height:36px;border-radius:8px;cursor:pointer;font-size:1.1rem;">−</button>
+          <span id="splitGuestCount" style="font-weight:700;font-size:1.1rem;min-width:24px;text-align:center;">2</span>
+          <button onclick="changeSplitGuests(1)" style="background:var(--bar-bg);border:1px solid var(--border);color:var(--text);width:36px;height:36px;border-radius:8px;cursor:pointer;font-size:1.1rem;">+</button>
+        </div>
+      </div>
+      <div id="splitGuestRows" style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;"></div>
+      <button onclick="confirmBillSplit()" style="width:100%;padding:15px;background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;border:none;border-radius:12px;font-size:1rem;font-weight:700;font-family:inherit;cursor:pointer;">✅ Create Split Plan</button>
+      <button onclick="document.getElementById('splitModal').style.display='none'" style="width:100%;margin-top:10px;padding:12px;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:12px;font-size:.9rem;font-family:inherit;cursor:pointer;">Cancel</button>
+    </div>
+  </div>
 
   <script src="admin.js"></script>
 </body>
