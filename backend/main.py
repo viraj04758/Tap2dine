@@ -220,25 +220,38 @@ def health():
 @app.post("/api/admin/login")
 def admin_login(body: dict):
     """Issue a JWT for the admin user. Credentials come from .env."""
-    username = body.get("username", "")
-    password = body.get("password", "")
+    username = (body.get("username") or "").strip()
+    password = (body.get("password") or "").strip()
 
     if not username or not password:
         raise HTTPException(status_code=400, detail="Username and password required")
 
-    if username != ADMIN_USERNAME:
+    # Strip env values — PowerShell echo adds trailing \n
+    cfg_user  = ADMIN_USERNAME.strip()
+    cfg_hash  = ADMIN_PW_HASH.strip()
+    cfg_plain = os.getenv("ADMIN_PASSWORD", "").strip()
+
+    if username != cfg_user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    if _JWT_AVAILABLE and ADMIN_PW_HASH:
+    # Verify password (bcrypt hash takes priority over plain-text)
+    if cfg_hash and _JWT_AVAILABLE:
         import bcrypt as _bc
-        if not _bc.checkpw(password.encode(), ADMIN_PW_HASH.encode()):
-            raise HTTPException(status_code=401, detail="Invalid credentials")
-    elif password != os.getenv("ADMIN_PASSWORD", ""):
-        # Fallback: plain-text password from env (only if no hash configured)
+        try:
+            valid = _bc.checkpw(password.encode(), cfg_hash.encode())
+        except Exception:
+            valid = False
+    elif cfg_plain:
+        valid = (password == cfg_plain)
+    else:
+        logger.error("No admin credentials configured (set ADMIN_PASSWORD or ADMIN_PASSWORD_HASH)")
+        raise HTTPException(status_code=503, detail="Admin credentials not configured on server")
+
+    if not valid:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     if not _JWT_AVAILABLE:
-        raise HTTPException(status_code=503, detail="JWT library not available")
+        raise HTTPException(status_code=503, detail="JWT library not available on server")
 
     token = _create_token({"sub": username, "role": "admin"})
     logger.info("Admin login successful: %s", username)
