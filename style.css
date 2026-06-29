@@ -986,3 +986,26 @@ body {
 @media (max-width: 600px) {
   .sk-img { height: 120px; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   QTY COUNTER ANIMATION (Step 9 — AnimatedSwitcher equivalent)
+   Only the number pops — card never rebuilds.
+══════════════════════════════════════════════════════════════════════════════ */
+@keyframes qty-pop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.45); color: var(--accent); }
+  70%  { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+
+.qty-num {
+  display: inline-block;
+  min-width: 20px;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.qty-num.qty-pop {
+  animation: qty-pop 0.22s cubic-bezier(.36,.07,.19,.97) both;
+}

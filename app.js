@@ -197,17 +197,47 @@ document.head.appendChild(_recStyle);
 
 function updateRecommendations() { scheduleAiRecommendations(); }
 
-// Helper: add to cart by ID then update UI
+// ── SURGICAL CARD UPDATE (Steps 2-9, 18-21) ─────────────────────────────────
+// Updates ONLY the footer of one card — zero full-grid rebuild, zero blink.
+function updateCardFooter(id) {
+  const qty  = cart[id] || 0;
+  // Find the card that owns this item by its qty span or add-btn data
+  const card = document.querySelector(`[data-item-id="${id}"]`);
+  if (!card) return; // card not in current view — nothing to do
+
+  const footer = card.querySelector('.menu-card-footer');
+  if (!footer) return;
+
+  // Keep the price span, swap only the button/qty-ctrl
+  const price = footer.querySelector('.menu-price')?.outerHTML || '';
+  if (qty === 0) {
+    footer.innerHTML = `${price}<button class="add-btn" onclick="addToCart(${id})">+ Add</button>`;
+  } else {
+    footer.innerHTML = `${price}
+      <div class="qty-ctrl">
+        <button onclick="changeQty(${id},-1)">−</button>
+        <span id="qty-${id}" class="qty-num qty-pop">${qty}</span>
+        <button onclick="changeQty(${id},1)">+</button>
+      </div>`;
+    // Trigger pop animation on the number
+    requestAnimationFrame(() => {
+      const span = footer.querySelector('.qty-num');
+      if (span) { span.classList.remove('qty-pop'); void span.offsetWidth; span.classList.add('qty-pop'); }
+    });
+  }
+}
+
+// Helper: add to cart by ID (from popular / AI strips) — no full rebuild
 function addToCartById(id) {
   cart[id] = (cart[id] || 0) + 1;
   updateCartUI();
-  renderMenu(getCurrentItems());
+  updateCardFooter(id);        // ← surgical patch only
   updateRecommendations();
   const item = MENU.find(m => m.id === id);
   if (item) showToast(`${item.emoji} ${item.name} added!`);
 }
 
-// ── RENDER MENU ───────────────────────────────────────────────────────────────
+// ── RENDER MENU — full rebuild only on load / filter / WebSocket ─────────────
 function renderMenu(items) {
   const grid = document.getElementById('menuGrid');
   grid.innerHTML = '';
@@ -221,6 +251,7 @@ function renderMenu(items) {
     const qty  = cart[item.id] || 0;
     const card = document.createElement('div');
     card.className = 'menu-card';
+    card.dataset.itemId = item.id;          // ← needed by updateCardFooter
     card.style.animationDelay = `${i * 0.06}s`;
     card.innerHTML = `
       <div class="menu-card-img">
@@ -237,7 +268,7 @@ function renderMenu(items) {
             ? `<button class="add-btn" onclick="addToCart(${item.id})">+ Add</button>`
             : `<div class="qty-ctrl">
                  <button onclick="changeQty(${item.id},-1)">−</button>
-                 <span id="qty-${item.id}">${qty}</span>
+                 <span id="qty-${item.id}" class="qty-num">${qty}</span>
                  <button onclick="changeQty(${item.id},1)">+</button>
                </div>`
           }
@@ -259,11 +290,11 @@ function filterMenu(cat, btn) {
   renderMenu(getCurrentItems());
 }
 
-// ── CART LOGIC ────────────────────────────────────────────────────────────────
+// ── CART LOGIC — local-only, no grid rebuild (Steps 3, 12, 18-19) ────────────
 function addToCart(id) {
   cart[id] = 1;
   updateCartUI();
-  renderMenu(getCurrentItems());
+  updateCardFooter(id);        // ← only this card updates
   updateRecommendations();
   const item = MENU.find(m => m.id === id);
   showToast(`${item.emoji} ${item.name} added!`);
@@ -273,7 +304,7 @@ function changeQty(id, delta) {
   cart[id] = (cart[id] || 0) + delta;
   if (cart[id] <= 0) delete cart[id];
   updateCartUI();
-  renderMenu(getCurrentItems());
+  updateCardFooter(id);        // ← only this card updates
   updateRecommendations();
 }
 
