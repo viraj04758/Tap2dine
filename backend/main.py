@@ -1,7 +1,8 @@
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.middleware.base import BaseHTTPMiddleware
 from models import (
     MenuItem, OrderCreate, OrderStatusUpdate, WaiterCall,
     CreatePaymentOrder, VerifyPayment,
@@ -16,9 +17,30 @@ import json
 import hmac
 import hashlib
 import os
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# ── LOGGING (item 14) ────────────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("tap2dine")
+
+# ── RATE LIMITING (item 3) ────────────────────────────────────────────────────
+try:
+    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi.util import get_remote_address
+    from slowapi.middleware import SlowAPIMiddleware
+    from slowapi.errors import RateLimitExceeded
+    limiter = Limiter(key_func=get_remote_address)
+    _RATE_LIMITING = True
+except ImportError:
+    limiter = None
+    _RATE_LIMITING = False
+    logger.warning("slowapi not installed — rate limiting disabled")
 
 # ── RAZORPAY ──────────────────────────────────────────────────────────────────
 try:
@@ -31,24 +53,73 @@ except ImportError:
     RAZORPAY_KEY_ID = RAZORPAY_KEY_SECRET = ""
 
 # ── APP ───────────────────────────────────────────────────────────────────────
-app = FastAPI(title="Tap2Dine API", version="3.0.0")
+app = FastAPI(
+    title="Tap2Dine API",
+    version="3.0.0",
+    # item 11: hide internal error details in docs
+    docs_url=None if os.getenv("VERCEL") else "/docs",
+    redoc_url=None if os.getenv("VERCEL") else "/redoc",
+)
+
+# item 3: attach rate limiter
+if _RATE_LIMITING:
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_middleware(SlowAPIMiddleware)
+
+# item 1: CORS — restrict to known origins
+_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:8000",
+    "https://tap2dine-ten.vercel.app",
+]
+if os.getenv("FRONTEND_URL"):
+    _ALLOWED_ORIGINS.append(os.getenv("FRONTEND_URL"))
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
-# Serve the frontend from the parent directory
-app.mount("/static", StaticFiles(directory=".."), name="static")
+# item 9: Security headers middleware
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Frame-Options"]         = "DENY"
+        response.headers["X-Content-Type-Options"]  = "nosniff"
+        response.headers["Referrer-Policy"]         = "strict-origin-when-cross-origin"
+        response.headers["X-XSS-Protection"]        = "1; mode=block"
+        response.headers["Permissions-Policy"]      = "geolocation=(), microphone=()"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+# item 11: Global exception handler — never leak stack traces
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error("Unhandled exception: %s", exc, exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error"},
+    )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={"detail": "Invalid request data"},
+    )
 
 
 # ── STARTUP: initialise SQLite / PostgreSQL ───────────────────────────────────
 @app.on_event("startup")
 def startup():
     init_db()
-    print("[OK] Database initialised (SQLite/PostgreSQL ready)")
+    logger.info("[OK] Database initialised (SQLite/PostgreSQL ready)")
 
 
 # ── WEBSOCKET MANAGER ─────────────────────────────────────────────────────────
@@ -145,7 +216,7 @@ async def delete_menu_item(item_id: int):
 
 # ── AI RECOMMENDATIONS ────────────────────────────────────────────────────────
 @app.post("/api/recommendations")
-async def recommendations(body: RecommendationRequest):
+async def recommendations(request: Request, body: RecommendationRequest):
     """
     Return up to 3 AI-powered (Gemini Flash) complementary item recommendations.
     Falls back to rule-based logic if GEMINI_API_KEY is not set.
@@ -158,9 +229,11 @@ async def recommendations(body: RecommendationRequest):
 
 # ── ORDERS ────────────────────────────────────────────────────────────────────
 @app.post("/api/orders", status_code=201)
-async def place_order(order: OrderCreate):
+async def place_order(request: Request, order: OrderCreate):
+    if _RATE_LIMITING: await limiter._check_request_limit(request, "10/minute")
     new_order = db.place_order(order.dict())
     await manager.broadcast("new_order", new_order)
+    logger.info("New order placed: table=%s", order.dict().get("table"))
     return {"message": "Order placed!", "order": new_order}
 
 
@@ -225,13 +298,14 @@ def popular_items(restaurant_id: str = Query("tap2dine")):
 
 # ── WAITER CALL ───────────────────────────────────────────────────────────────
 @app.post("/api/waiter-call", status_code=201)
-async def waiter_call(call: WaiterCall):
+async def waiter_call(request: Request, call: WaiterCall):
     call_data = {
         "table": call.table,
         "reason": call.reason or "Assistance needed",
         "restaurant_id": call.restaurant_id,
     }
     await manager.broadcast("waiter_call", call_data)
+    logger.info("Waiter called: table=%s", call.table)
     return {"message": f"Waiter notified for Table {call.table}"}
 
 
@@ -298,10 +372,11 @@ async def mark_guest_paid(order_id: str, guest_idx: int):
 
 # ── FEEDBACK ─────────────────────────────────────────────────────────────
 @app.post("/api/feedback", status_code=201)
-async def submit_feedback(body: FeedbackCreate):
+async def submit_feedback(request: Request, body: FeedbackCreate):
     """Submit customer feedback (rating 1-5 + optional comment)."""
     feedback = db.add_feedback(body.dict())
     await manager.broadcast("new_feedback", feedback)
+    logger.info("Feedback submitted: rating=%s", body.dict().get("rating"))
     return {"message": "Thank you for your feedback!", "feedback": feedback}
 
 
