@@ -84,7 +84,27 @@ function updateStatusBanner(status) {
 }
 
 // ── FETCH MENU FROM API ───────────────────────────────────────────────────────
+// ── SKELETON LOADER ───────────────────────────────────────────────────────────
+function showMenuSkeleton(count = 8) {
+  const grid = document.getElementById('menuGrid');
+  grid.innerHTML = Array.from({ length: count }).map(() => `
+    <div class="menu-card sk-card">
+      <div class="sk-img sk-shimmer"></div>
+      <div class="sk-body">
+        <div class="sk-line sk-title sk-shimmer"></div>
+        <div class="sk-line sk-desc sk-shimmer"></div>
+        <div class="sk-line sk-desc-short sk-shimmer"></div>
+        <div class="sk-footer">
+          <div class="sk-price sk-shimmer"></div>
+          <div class="sk-btn sk-shimmer"></div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
 async function loadMenu() {
+  showMenuSkeleton();
   try {
     const res  = await fetch(`${API}/menu?restaurant_id=${restaurantId}`);
     const data = await res.json();
@@ -93,9 +113,11 @@ async function loadMenu() {
     scheduleAiRecommendations();
   } catch (err) {
     console.error('Failed to load menu:', err);
+    document.getElementById('menuGrid').innerHTML = '';
     showToast('⚠️ Cannot reach server. Is the backend running?');
   }
 }
+
 
 // ── POPULAR / TRENDING STRIP ─────────────────────────────────────────────
 async function loadPopular() {
