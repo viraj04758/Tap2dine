@@ -5,7 +5,134 @@ const API = _isLocal ? 'http://localhost:8000/api' : '/api';
 const _wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const WS  = _isLocal ? 'ws://localhost:8000/ws' : `${_wsProto}//${window.location.host}/ws`;
 
-// ── TAB STATE ─────────────────────────────────────────────────────────────────
+// ── JWT TOKEN MANAGEMENT (item #1) ────────────────────────────────────────────
+const TOKEN_KEY = 'tap2dine_admin_token';
+
+function getAdminToken()        { return localStorage.getItem(TOKEN_KEY); }
+function setAdminToken(t)       { localStorage.setItem(TOKEN_KEY, t); }
+function clearAdminToken()      { localStorage.removeItem(TOKEN_KEY); }
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+async function apiFetch(path, options = {}) {
+  const token = getAdminToken();
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${API}${path}`, { headers, ...options });
+
+  if (res.status === 401 || res.status === 403) {
+    clearAdminToken();
+    showLoginModal('Session expired. Please log in again.');
+    throw new Error('Not authenticated');
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+// ── ADMIN LOGIN MODAL ─────────────────────────────────────────────────────────
+function injectLoginModal() {
+  if (document.getElementById('adminLoginModal')) return;
+  const modal = document.createElement('div');
+  modal.id = 'adminLoginModal';
+  modal.innerHTML = `
+    <div style="
+      position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);
+      display:flex;align-items:center;justify-content:center;z-index:9999;
+    ">
+      <div style="
+        background:#1a1a2e;border:1px solid rgba(255,255,255,.1);border-radius:20px;
+        padding:40px 36px;width:360px;max-width:90vw;box-shadow:0 24px 64px rgba(0,0,0,.6);
+      ">
+        <div style="text-align:center;margin-bottom:28px;">
+          <div style="font-size:2.5rem;margin-bottom:8px;">🔐</div>
+          <h2 style="color:#fff;font-size:1.4rem;margin:0 0 6px;">Admin Login</h2>
+          <p style="color:#888;font-size:.85rem;margin:0;">Tap2Dine Dashboard</p>
+        </div>
+        <div id="loginError" style="
+          display:none;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);
+          color:#f87171;padding:10px 14px;border-radius:10px;font-size:.85rem;margin-bottom:16px;
+        "></div>
+        <input id="loginUser" type="text" placeholder="Username" autocomplete="username" style="
+          width:100%;padding:12px 16px;background:#0f0f1e;border:1px solid rgba(255,255,255,.12);
+          border-radius:12px;color:#fff;font-size:.95rem;outline:none;box-sizing:border-box;margin-bottom:12px;
+        " />
+        <input id="loginPass" type="password" placeholder="Password" autocomplete="current-password" style="
+          width:100%;padding:12px 16px;background:#0f0f1e;border:1px solid rgba(255,255,255,.12);
+          border-radius:12px;color:#fff;font-size:.95rem;outline:none;box-sizing:border-box;margin-bottom:20px;
+        " />
+        <button onclick="submitAdminLogin()" style="
+          width:100%;padding:14px;background:linear-gradient(135deg,#ff6b35,#f7931e);
+          border:none;border-radius:12px;color:#fff;font-size:1rem;font-weight:700;
+          cursor:pointer;transition:opacity .2s;
+        ">Sign In →</button>
+        <p style="color:#555;font-size:.75rem;text-align:center;margin:16px 0 0;">
+          Credentials set via ADMIN_USERNAME / ADMIN_PASSWORD_HASH env vars
+        </p>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  document.getElementById('loginPass').addEventListener('keydown', e => {
+    if (e.key === 'Enter') submitAdminLogin();
+  });
+}
+
+function showLoginModal(msg = '') {
+  injectLoginModal();
+  document.getElementById('adminLoginModal').style.display = 'flex';
+  if (msg) {
+    const el = document.getElementById('loginError');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+}
+
+function hideLoginModal() {
+  const m = document.getElementById('adminLoginModal');
+  if (m) m.style.display = 'none';
+}
+
+async function submitAdminLogin() {
+  const username = document.getElementById('loginUser').value.trim();
+  const password = document.getElementById('loginPass').value;
+  const errEl    = document.getElementById('loginError');
+  errEl.style.display = 'none';
+
+  if (!username || !password) {
+    errEl.textContent = 'Please enter username and password.';
+    errEl.style.display = 'block';
+    return;
+  }
+  try {
+    const data = await fetch(`${API}/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    }).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(e)));
+    setAdminToken(data.access_token);
+    hideLoginModal();
+    showToast('✅ Logged in as admin!');
+    // Reload initial data now that we're authenticated
+    loadOrders();
+  } catch (e) {
+    errEl.textContent = e.detail || 'Invalid credentials.';
+    errEl.style.display = 'block';
+  }
+}
+
+function adminLogout() {
+  clearAdminToken();
+  showLoginModal('You have been logged out.');
+}
+
+// Show login modal on load if no token
+window.addEventListener('DOMContentLoaded', () => {
+  if (!getAdminToken()) showLoginModal();
+});
+
+
 const TAB_META = {
   orders:       { title: 'Live Orders',    sub: 'Real-time incoming orders from all tables' },
   kitchen:      { title: 'Kitchen View',   sub: 'Incoming tickets by preparation stage' },

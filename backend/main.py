@@ -1,7 +1,8 @@
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query, Request
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.base import BaseHTTPMiddleware
 from models import (
     MenuItem, OrderCreate, OrderStatusUpdate, WaiterCall,
@@ -18,6 +19,7 @@ import hmac
 import hashlib
 import os
 import logging
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -41,6 +43,54 @@ except ImportError:
     limiter = None
     _RATE_LIMITING = False
     logger.warning("slowapi not installed — rate limiting disabled")
+
+# ── JWT AUTH (items #1-3) ────────────────────────────────────────────────────
+try:
+    from jose import jwt, JWTError
+    import bcrypt as _bcrypt
+    _JWT_AVAILABLE = True
+except ImportError:
+    _JWT_AVAILABLE = False
+    logger.warning("python-jose or bcrypt not installed — JWT auth disabled")
+
+JWT_SECRET    = os.getenv("JWT_SECRET", "change-me-generate-with-secrets-token-hex-64")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_H  = int(os.getenv("JWT_EXPIRE_HOURS", "8"))
+
+_http_bearer = HTTPBearer(auto_error=False)
+
+# item #2: Admin credentials from env (never hardcode)
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PW_HASH  = os.getenv("ADMIN_PASSWORD_HASH", "")  # bcrypt hash
+
+def _create_token(data: dict) -> str:
+    payload = {**data, "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRE_H)}
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def get_current_admin(
+    credentials: HTTPAuthorizationCredentials = Depends(_http_bearer)
+):
+    """FastAPI dependency — raises 401/403 if token is missing or invalid."""
+    if not _JWT_AVAILABLE:
+        return {"sub": "admin", "role": "admin"}  # JWT disabled gracefully
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    try:
+        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admins only")
+    return payload
+
+# ── XSS SANITIZER (item #8) ──────────────────────────────────────────────────
+try:
+    import bleach as _bleach
+    def sanitize(text: str) -> str:
+        return _bleach.clean(text or "", strip=True)
+except ImportError:
+    def sanitize(text: str) -> str:
+        return text or ""
 
 # ── RAZORPAY ──────────────────────────────────────────────────────────────────
 try:
@@ -160,10 +210,39 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
 
 
-# ── HEALTH ────────────────────────────────────────────────────────────────────
+# ── HEALTH ───────────────────────────────────────────────────────────────────
 @app.get("/api/health")
 def health():
     return {"status": "ok", "message": "Tap2Dine API v3.0 is running"}
+
+
+# ── ADMIN AUTH (item #1) ───────────────────────────────────────────────────
+@app.post("/api/admin/login")
+def admin_login(body: dict):
+    """Issue a JWT for the admin user. Credentials come from .env."""
+    username = body.get("username", "")
+    password = body.get("password", "")
+
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="Username and password required")
+
+    if username != ADMIN_USERNAME:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if _JWT_AVAILABLE and ADMIN_PW_HASH:
+        import bcrypt as _bc
+        if not _bc.checkpw(password.encode(), ADMIN_PW_HASH.encode()):
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+    elif password != os.getenv("ADMIN_PASSWORD", ""):
+        # Fallback: plain-text password from env (only if no hash configured)
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if not _JWT_AVAILABLE:
+        raise HTTPException(status_code=503, detail="JWT library not available")
+
+    token = _create_token({"sub": username, "role": "admin"})
+    logger.info("Admin login successful: %s", username)
+    return {"access_token": token, "token_type": "bearer", "expires_in_hours": JWT_EXPIRE_H}
 
 
 # ── RESTAURANTS (Multi-SaaS) ──────────────────────────────────────────────────
@@ -198,7 +277,7 @@ def get_menu(restaurant_id: str = Query("tap2dine")):
 
 
 @app.post("/api/menu", status_code=201)
-async def add_menu_item(item: MenuItem):
+async def add_menu_item(item: MenuItem, _admin=Depends(get_current_admin)):
     data = item.dict()
     new_item = db.add_menu_item(data)
     await manager.broadcast("menu_updated", {"action": "added", "item": new_item})
@@ -206,7 +285,7 @@ async def add_menu_item(item: MenuItem):
 
 
 @app.delete("/api/menu/{item_id}")
-async def delete_menu_item(item_id: int):
+async def delete_menu_item(item_id: int, _admin=Depends(get_current_admin)):
     success = db.delete_menu_item(item_id)
     if not success:
         raise HTTPException(status_code=404, detail="Menu item not found")
@@ -252,7 +331,7 @@ def get_orders(
 
 
 @app.patch("/api/orders/{order_id}")
-async def update_order_status(order_id: str, update: OrderStatusUpdate):
+async def update_order_status(order_id: str, update: OrderStatusUpdate, _admin=Depends(get_current_admin)):
     valid = ["Pending", "Preparing", "Ready", "Delivered"]
     if update.status not in valid:
         raise HTTPException(status_code=400, detail=f"Status must be one of {valid}")
@@ -264,7 +343,7 @@ async def update_order_status(order_id: str, update: OrderStatusUpdate):
 
 
 @app.delete("/api/orders")
-async def clear_orders(restaurant_id: str = Query("tap2dine")):
+async def clear_orders(restaurant_id: str = Query("tap2dine"), _admin=Depends(get_current_admin)):
     db.clear_orders(restaurant_id)
     await manager.broadcast("orders_cleared", {})
     return {"message": "All orders cleared"}
@@ -374,9 +453,13 @@ async def mark_guest_paid(order_id: str, guest_idx: int):
 @app.post("/api/feedback", status_code=201)
 async def submit_feedback(request: Request, body: FeedbackCreate):
     """Submit customer feedback (rating 1-5 + optional comment)."""
-    feedback = db.add_feedback(body.dict())
+    data = body.dict()
+    # item #8: sanitize comment to prevent XSS
+    if data.get("comment"):
+        data["comment"] = sanitize(data["comment"])
+    feedback = db.add_feedback(data)
     await manager.broadcast("new_feedback", feedback)
-    logger.info("Feedback submitted: rating=%s", body.dict().get("rating"))
+    logger.info("Feedback submitted: rating=%s", data.get("rating"))
     return {"message": "Thank you for your feedback!", "feedback": feedback}
 
 
