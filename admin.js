@@ -1,6 +1,9 @@
 // ── API CONFIG ────────────────────────────────────────────────────────────────
-const API = 'http://localhost:8000/api';
-const WS  = 'ws://localhost:8000/ws';
+// Auto-detect local dev vs production (Vercel)
+const _isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const API = _isLocal ? 'http://localhost:8000/api' : '/api';
+const _wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const WS  = _isLocal ? 'ws://localhost:8000/ws' : `${_wsProto}//${window.location.host}/ws`;
 
 // ── TAB STATE ─────────────────────────────────────────────────────────────────
 const TAB_META = {

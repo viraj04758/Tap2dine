@@ -244,7 +244,9 @@
   <script>
     const params   = new URLSearchParams(window.location.search);
     const RID      = params.get('restaurant') || 'tap2dine';
-    const BASE     = 'http://localhost:8000';
+    // Auto-detect local dev vs production (Vercel)
+    const _isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    const BASE     = _isLocal ? 'http://localhost:8000' : '';
     let revenueChartInst = null;
     let peakChartInst    = null;
 

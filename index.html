@@ -386,9 +386,11 @@
       const restaurantId = params.get('restaurant') || 'tap2dine';
       const table = params.get('table') || '';
       const comment = document.getElementById('fbComment').value.trim();
+      const _isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+      const _apiBase = _isLocal ? 'http://localhost:8000' : '';
 
       try {
-        const res = await fetch('http://localhost:8000/api/feedback', {
+        const res = await fetch(`${_apiBase}/api/feedback`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

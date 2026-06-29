@@ -16,7 +16,11 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker, relationship
 load_dotenv()
 
 # ── ENGINE ────────────────────────────────────────────────────────────────────
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./tap2dine.db")
+# On Vercel the app directory is read-only; write the SQLite DB to /tmp instead.
+_default_db = (
+    "sqlite:////tmp/tap2dine.db" if os.getenv("VERCEL") else "sqlite:///./tap2dine.db"
+)
+DATABASE_URL = os.getenv("DATABASE_URL", _default_db)
 # SQLite needs check_same_thread=False; PostgreSQL doesn't care about this kwarg
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(DATABASE_URL, connect_args=connect_args, echo=False)
