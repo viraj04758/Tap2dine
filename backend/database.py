@@ -4,7 +4,7 @@ Supports SQLite (default, zero setup) and PostgreSQL (set DATABASE_URL in .env).
 """
 import os
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
 from sqlalchemy import (
@@ -41,7 +41,7 @@ class RestaurantORM(Base):
     phone         = Column(String, default="")
     currency      = Column(String, default="INR")
     tax_percent   = Column(Float, default=5.0)
-    created_at    = Column(DateTime, default=datetime.utcnow)
+    created_at    = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class MenuItemORM(Base):
@@ -71,7 +71,7 @@ class OrderORM(Base):
     payment_method= Column(String, default="online")
     razorpay_order_id   = Column(String, default="")
     razorpay_payment_id = Column(String, default="")
-    created_at    = Column(DateTime, default=datetime.utcnow)
+    created_at    = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class ReservationORM(Base):
@@ -87,7 +87,7 @@ class ReservationORM(Base):
     table_pref      = Column(String, default="any")
     special_requests= Column(Text, default="")
     status          = Column(String, default="Pending")   # Pending | Confirmed | Cancelled
-    created_at      = Column(DateTime, default=datetime.utcnow)
+    created_at      = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class BillSplitORM(Base):
@@ -96,7 +96,7 @@ class BillSplitORM(Base):
     order_id   = Column(String, ForeignKey("orders.id"), nullable=False)
     split_type = Column(String, default="equal")
     guests_json= Column(Text, nullable=False)   # JSON list of {name, amount, paid}
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class FeedbackORM(Base):
@@ -106,7 +106,7 @@ class FeedbackORM(Base):
     table_no      = Column(String, default="")
     rating        = Column(Integer, nullable=False)   # 1-5
     comment       = Column(Text, default="")
-    created_at    = Column(DateTime, default=datetime.utcnow)
+    created_at    = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 # ── SEED DATA ─────────────────────────────────────────────────────────────────
@@ -283,7 +283,7 @@ class Database:
             return True
 
     # ── ORDERS ───────────────────────────────────────────────────────────────
-    _order_counter: int = 1   # Tracks sequence (uses DB count on startup)
+
 
     def _next_order_id(self, session: Session) -> str:
         count = session.query(func.count(OrderORM.id)).scalar() + 1
@@ -305,7 +305,7 @@ class Database:
                 razorpay_order_id=data.get("razorpay_order_id", ""),
                 razorpay_payment_id=data.get("razorpay_payment_id", ""),
                 status="Pending",
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
             )
             s.add(row)
             s.commit()
@@ -334,7 +334,7 @@ class Database:
             q = s.query(OrderORM)
             if restaurant_id:
                 q = q.filter_by(restaurant_id=restaurant_id)
-            q.delete()
+            q.delete(synchronize_session=False)
             s.commit()
 
     # ── STATS ────────────────────────────────────────────────────────────────
@@ -387,7 +387,7 @@ class Database:
                 table_pref=data.get("table_pref", "any"),
                 special_requests=data.get("special_requests", ""),
                 status="Pending",
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
             )
             s.add(row)
             s.commit()
@@ -424,7 +424,7 @@ class Database:
                 order_id=order_id,
                 split_type=split_type,
                 guests_json=json.dumps(guests),
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
             )
             s.add(row)
             s.commit()
@@ -458,7 +458,7 @@ class Database:
                 table_no=data.get("table_no", ""),
                 rating=data["rating"],
                 comment=data.get("comment", ""),
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
             )
             s.add(row)
             s.commit()
@@ -495,7 +495,7 @@ class Database:
             q = s.query(OrderORM).filter_by(restaurant_id=restaurant_id)
             all_orders = q.all()
 
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             week_start  = today_start - timedelta(days=today_start.weekday())
             month_start = today_start.replace(day=1)

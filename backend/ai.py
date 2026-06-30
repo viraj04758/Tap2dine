@@ -63,6 +63,22 @@ def _rule_based_recommendations(cart_items: list, menu: list) -> list:
     return results
 
 
+def _extract_json(text: str) -> str:
+    """
+    Safely pull JSON out of a Gemini response, whether or not
+    it's wrapped in markdown code fences.
+    """
+    text = text.strip()
+    if "```" in text:
+        parts = text.split("```")
+        if len(parts) >= 2:
+            text = parts[1]
+            if text.startswith("json"):
+                text = text[4:]
+            text = text.strip()
+    return text
+
+
 async def get_recommendations(cart_items: list, menu: list) -> list:
     """
     Return 3 AI-powered recommendations.
@@ -77,7 +93,8 @@ async def get_recommendations(cart_items: list, menu: list) -> list:
     try:
         import google.generativeai as genai
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        # gemini-1.5-flash is deprecated/retired — use a current model.
+        model = genai.GenerativeModel("gemini-2.5-flash")
 
         cart_names = [f"{i['name']} (₹{i['price']})" for i in cart_items]
         menu_list  = [
@@ -95,17 +112,10 @@ Return ONLY valid JSON — a list of 3 objects with keys: id (int), name (str), 
 Menu: {json.dumps(menu_list[:30])}"""
 
         response = model.generate_content(prompt)
-        text = response.text.strip()
+        text = response.text
 
-        # Strip markdown code fences if present
-        if "```" in text:
-            # Extract content between the first ``` and the last ```
-            text = text.split("```")[1]  # e.g. 'json\n[...]'
-            if text.startswith("json"):
-                text = text[4:].strip()
-            text = text.strip()
+        suggestions = json.loads(_extract_json(text))
 
-        suggestions = json.loads(text)
         # Enrich with full menu data
         menu_map = {m["id"]: m for m in menu}
         result = []
@@ -123,5 +133,5 @@ Menu: {json.dumps(menu_list[:30])}"""
         return result if result else _rule_based_recommendations(cart_items, menu)
 
     except Exception as e:
-        print(f"[AI] Gemini failed ({e}), using rule-based fallback")
+        print(f"[AI] Gemini failed ({type(e).__name__}: {e}), using rule-based fallback")
         return _rule_based_recommendations(cart_items, menu)

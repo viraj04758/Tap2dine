@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query, Request, Depends, Cookie
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -72,8 +73,9 @@ pwd_context = CryptContext(
 
 # ── LOGIN REQUEST MODEL ────────────────────────────────────────────────────────
 class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str = Field(min_length=8, max_length=64)
+    # Accept either an email address OR a plain username string
+    email: str = Field(min_length=1, max_length=254)
+    password: str = Field(min_length=1, max_length=64)
 
 _http_bearer = HTTPBearer(auto_error=False)
 
@@ -135,10 +137,20 @@ except ImportError:
     rzp_client = None
     RAZORPAY_KEY_ID = RAZORPAY_KEY_SECRET = ""
 
+# ── LIFESPAN ─────────────────────────────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Replaces deprecated @app.on_event('startup')."""
+    init_db()
+    logger.info("[OK] Database initialised (SQLite/PostgreSQL ready)")
+    yield
+
+
 # ── APP ───────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="Tap2Dine API",
     version="3.0.0",
+    lifespan=lifespan,
     # item 11: hide internal error details in docs
     docs_url=None if os.getenv("VERCEL") else "/docs",
     redoc_url=None if os.getenv("VERCEL") else "/redoc",
@@ -203,11 +215,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
-# ── STARTUP: initialise SQLite / PostgreSQL ───────────────────────────────────
-@app.on_event("startup")
-def startup():
-    init_db()
-    logger.info("[OK] Database initialised (SQLite/PostgreSQL ready)")
+# NOTE: startup logic moved to lifespan() context manager above
 
 
 # ── WEBSOCKET MANAGER ─────────────────────────────────────────────────────────
@@ -335,7 +343,7 @@ async def create_restaurant(body: RestaurantCreate):
     if existing:
         raise HTTPException(status_code=409, detail=f"Restaurant '{body.id}' already exists")
     # Seed an empty menu for the new restaurant (no items)
-    result = db.create_restaurant(body.dict())
+    result = db.create_restaurant(body.model_dump())
     await manager.broadcast("restaurant_created", result)
     return {"message": "Restaurant created", "restaurant": result}
 
@@ -348,7 +356,7 @@ def get_menu(restaurant_id: str = Query("tap2dine")):
 
 @app.post("/api/menu", status_code=201)
 async def add_menu_item(item: MenuItem, _admin=Depends(get_current_admin)):
-    data = item.dict()
+    data = item.model_dump()
     new_item = db.add_menu_item(data)
     await manager.broadcast("menu_updated", {"action": "added", "item": new_item})
     return {"message": "Item added", "item": new_item}
@@ -371,7 +379,7 @@ async def recommendations(request: Request, body: RecommendationRequest):
     Falls back to rule-based logic if GEMINI_API_KEY is not set.
     """
     menu = db.get_menu(body.restaurant_id)
-    cart = [item.dict() for item in body.cart]
+    cart = [item.model_dump() for item in body.cart]
     suggestions = await get_recommendations(cart, menu)
     return {"recommendations": suggestions, "count": len(suggestions)}
 
@@ -379,10 +387,9 @@ async def recommendations(request: Request, body: RecommendationRequest):
 # ── ORDERS ────────────────────────────────────────────────────────────────────
 @app.post("/api/orders", status_code=201)
 async def place_order(request: Request, order: OrderCreate):
-    if _RATE_LIMITING: await limiter._check_request_limit(request, "10/minute")
-    new_order = db.place_order(order.dict())
+    new_order = db.place_order(order.model_dump())
     await manager.broadcast("new_order", new_order)
-    logger.info("New order placed: table=%s", order.dict().get("table"))
+    logger.info("New order placed: table=%s", order.model_dump().get("table"))
     return {"message": "Order placed!", "order": new_order}
 
 
@@ -398,6 +405,13 @@ def get_orders(
     if status:
         orders = [o for o in orders if o["status"].lower() == status.lower()]
     return {"orders": orders, "count": len(orders)}
+
+
+# NOTE: /api/orders/stats MUST be defined before /api/orders/{order_id}
+# otherwise FastAPI matches "stats" as an order_id and returns 422.
+@app.get("/api/orders/stats")
+def order_stats(restaurant_id: str = Query("tap2dine")):
+    return db.get_stats(restaurant_id)
 
 
 @app.patch("/api/orders/{order_id}")
@@ -417,11 +431,6 @@ async def clear_orders(restaurant_id: str = Query("tap2dine"), _admin=Depends(ge
     db.clear_orders(restaurant_id)
     await manager.broadcast("orders_cleared", {})
     return {"message": "All orders cleared"}
-
-
-@app.get("/api/orders/stats")
-def order_stats(restaurant_id: str = Query("tap2dine")):
-    return db.get_stats(restaurant_id)
 
 
 # ── POPULAR ITEMS ─────────────────────────────────────────────────────────────
@@ -461,7 +470,7 @@ async def waiter_call(request: Request, call: WaiterCall):
 # ── RESERVATIONS ──────────────────────────────────────────────────────────────
 @app.post("/api/reservations", status_code=201)
 async def create_reservation(body: ReservationCreate):
-    reservation = db.create_reservation(body.dict())
+    reservation = db.create_reservation(body.model_dump())
     await manager.broadcast("new_reservation", reservation)
     return {"message": "Reservation created!", "reservation": reservation}
 
@@ -492,7 +501,7 @@ async def update_reservation(reservation_id: int, update: ReservationStatusUpdat
 @app.post("/api/orders/{order_id}/split", status_code=201)
 async def create_bill_split(order_id: str, body: BillSplitCreate):
     """Create or replace a bill split for an order."""
-    guests = [g.dict() for g in body.guests]
+    guests = [g.model_dump() for g in body.guests]
     # Ensure all have a 'paid' field
     for g in guests:
         g.setdefault("paid", False)
@@ -523,7 +532,7 @@ async def mark_guest_paid(order_id: str, guest_idx: int):
 @app.post("/api/feedback", status_code=201)
 async def submit_feedback(request: Request, body: FeedbackCreate):
     """Submit customer feedback (rating 1-5 + optional comment)."""
-    data = body.dict()
+    data = body.model_dump()
     # item #8: sanitize comment to prevent XSS
     if data.get("comment"):
         data["comment"] = sanitize(data["comment"])

@@ -109,7 +109,7 @@ async function submitAdminLogin() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ email: username, password }),
     });
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));
