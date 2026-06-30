@@ -195,7 +195,12 @@ app.add_middleware(SecurityHeadersMiddleware)
 @app.middleware("http")
 async def remove_server_header(request: Request, call_next):
     response = await call_next(request)
-    response.headers.pop("server", None)
+    # MutableHeaders.pop() is not available in all Starlette versions —
+    # use del with a guard instead.
+    try:
+        del response.headers["server"]
+    except KeyError:
+        pass
     return response
 
 # item 11: Global exception handler — never leak stack traces
