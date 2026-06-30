@@ -5,23 +5,20 @@ const API = _isLocal ? 'http://localhost:8000/api' : '/api';
 const _wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const WS  = _isLocal ? 'ws://localhost:8000/ws' : `${_wsProto}//${window.location.host}/ws`;
 
-// ── JWT TOKEN MANAGEMENT (item #1) ────────────────────────────────────────────
-const TOKEN_KEY = 'tap2dine_admin_token';
-
-function getAdminToken()        { return localStorage.getItem(TOKEN_KEY); }
-function setAdminToken(t)       { localStorage.setItem(TOKEN_KEY, t); }
-function clearAdminToken()      { localStorage.removeItem(TOKEN_KEY); }
+// ── JWT AUTH — now uses HttpOnly cookies (set by server) ─────────────────────
+// No token stored in localStorage — server sets/reads HttpOnly cookie
+let _isAuthenticated = false;  // local flag (not security-critical, just UI gating)
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 async function apiFetch(path, options = {}) {
-  const token = getAdminToken();
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-
-  const res = await fetch(`${API}${path}`, { headers, ...options });
+  const res = await fetch(`${API}${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',    // always send HttpOnly cookie
+    ...options,
+  });
 
   if (res.status === 401 || res.status === 403) {
-    clearAdminToken();
+    _isAuthenticated = false;
     showLoginModal('Session expired. Please log in again.');
     throw new Error('Not authenticated');
   }
@@ -31,6 +28,7 @@ async function apiFetch(path, options = {}) {
   }
   return res.json();
 }
+
 
 // ── ADMIN LOGIN MODAL ─────────────────────────────────────────────────────────
 function injectLoginModal() {
@@ -106,12 +104,18 @@ async function submitAdminLogin() {
     return;
   }
   try {
-    const data = await fetch(`${API}/admin/login`, {
+    // credentials:'include' ensures the server's Set-Cookie is accepted
+    const res = await fetch(`${API}/admin/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ username, password }),
-    }).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(e)));
-    setAdminToken(data.access_token);
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      throw e;
+    }
+    _isAuthenticated = true;
     hideLoginModal();
     showToast('✅ Logged in as admin!');
     // Reload initial data now that we're authenticated
@@ -122,14 +126,20 @@ async function submitAdminLogin() {
   }
 }
 
-function adminLogout() {
-  clearAdminToken();
+async function adminLogout() {
+  try {
+    await fetch(`${API}/admin/logout`, { method: 'POST', credentials: 'include' });
+  } catch (_) {}
+  _isAuthenticated = false;
   showLoginModal('You have been logged out.');
 }
 
-// Show login modal on load if no token
+// Show login modal on load if no cookie present (we do a lightweight /health check)
 window.addEventListener('DOMContentLoaded', () => {
-  if (!getAdminToken()) showLoginModal();
+  // Try a quick authenticated ping; show login if 401
+  fetch(`${API}/orders`, { credentials: 'include' })
+    .then(r => { if (r.status === 401 || r.status === 403) showLoginModal(); })
+    .catch(() => showLoginModal());
 });
 
 
@@ -163,18 +173,7 @@ function switchTab(tab, btn) {
   if (tab === 'reservations') loadReservations();
 }
 
-// ── HELPERS ───────────────────────────────────────────────────────────────────
-async function apiFetch(path, options = {}) {
-  const res = await fetch(`${API}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `HTTP ${res.status}`);
-  }
-  return res.json();
-}
+
 
 // ── WEBSOCKET ─────────────────────────────────────────────────────────────────
 let ws;

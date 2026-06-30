@@ -1,8 +1,10 @@
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query, Request, Depends
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query, Request, Depends, Cookie
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel, EmailStr, Field
+from passlib.context import CryptContext
 from starlette.middleware.base import BaseHTTPMiddleware
 from models import (
     MenuItem, OrderCreate, OrderStatusUpdate, WaiterCall,
@@ -54,8 +56,24 @@ except ImportError:
     logger.warning("python-jose or bcrypt not installed — JWT auth disabled")
 
 JWT_SECRET    = os.getenv("JWT_SECRET", "change-me-generate-with-secrets-token-hex-64")
-JWT_ALGORITHM = "HS256"
+SECRET_KEY    = os.getenv("SECRET_KEY", JWT_SECRET)   # alias used by new helpers
+DATABASE_URL  = os.getenv("DATABASE_URL", "sqlite:///./tap2dine.db")
+ALGORITHM    = "HS256"
+JWT_ALGORITHM = ALGORITHM
 JWT_EXPIRE_H  = int(os.getenv("JWT_EXPIRE_HOURS", "8"))
+
+# ── PASSWORD HASHING ─────────────────────────────────────────────────────────
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto",
+    bcrypt__rounds=12
+)
+
+
+# ── LOGIN REQUEST MODEL ────────────────────────────────────────────────────────
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=64)
 
 _http_bearer = HTTPBearer(auto_error=False)
 
@@ -68,19 +86,34 @@ def _create_token(data: dict) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 def get_current_admin(
-    credentials: HTTPAuthorizationCredentials = Depends(_http_bearer)
+    credentials: HTTPAuthorizationCredentials = Depends(_http_bearer),
+    access_token: str = Cookie(None)
 ):
-    """FastAPI dependency — raises 401/403 if token is missing or invalid."""
+    """FastAPI dependency — reads JWT from HttpOnly cookie (preferred) or Authorization header."""
     if not _JWT_AVAILABLE:
         return {"sub": "admin", "role": "admin"}  # JWT disabled gracefully
-    if not credentials:
+
+    # Prefer cookie, fall back to Bearer header
+    token = access_token or (credentials.credentials if credentials else None)
+    if not token:
         raise HTTPException(status_code=401, detail="Authentication required")
     try:
-        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     if payload.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admins only")
+    return payload
+
+
+def get_current_user(access_token: str = Cookie(None)):
+    """Reads JWT from HttpOnly cookie for general authenticated endpoints."""
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        payload = jwt.decode(access_token, SECRET_KEY, algorithms=[ALGORITHM])
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
     return payload
 
 # ── XSS SANITIZER (item #8) ──────────────────────────────────────────────────
@@ -118,35 +151,40 @@ if _RATE_LIMITING:
     app.add_middleware(SlowAPIMiddleware)
 
 # item 1: CORS — restrict to known origins
-_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://localhost:8000",
-    "https://tap2dine-ten.vercel.app",
-]
-if os.getenv("FRONTEND_URL"):
-    _ALLOWED_ORIGINS.append(os.getenv("FRONTEND_URL"))
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_ALLOWED_ORIGINS,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://tap2dine-ten.vercel.app",
+    ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["*"],
 )
 
 # item 9: Security headers middleware
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
-        response.headers["X-Frame-Options"]         = "DENY"
         response.headers["X-Content-Type-Options"]  = "nosniff"
+        response.headers["X-Frame-Options"]         = "DENY"
         response.headers["Referrer-Policy"]         = "strict-origin-when-cross-origin"
         response.headers["X-XSS-Protection"]        = "1; mode=block"
-        response.headers["Permissions-Policy"]      = "geolocation=(), microphone=()"
+        response.headers["Permissions-Policy"]      = "geolocation=(), microphone=(), camera=()"
         return response
 
 app.add_middleware(SecurityHeadersMiddleware)
+
+
+# Remove server header
+@app.middleware("http")
+async def remove_server_header(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.pop("server", None)
+    return response
 
 # item 11: Global exception handler — never leak stack traces
 @app.exception_handler(Exception)
@@ -218,10 +256,10 @@ def health():
 
 # ── ADMIN AUTH (item #1) ───────────────────────────────────────────────────
 @app.post("/api/admin/login")
-def admin_login(body: dict):
-    """Issue a JWT for the admin user. Credentials come from .env."""
-    username = (body.get("username") or "").strip()
-    password = (body.get("password") or "").strip()
+def admin_login(body: LoginRequest):
+    """Issue a JWT for the admin user via HttpOnly cookie. Credentials come from .env."""
+    username = str(body.email).strip()
+    password = body.password.strip()
 
     if not username or not password:
         raise HTTPException(status_code=400, detail="Username and password required")
@@ -232,7 +270,7 @@ def admin_login(body: dict):
     cfg_plain = os.getenv("ADMIN_PASSWORD", "").strip()
 
     if username != cfg_user:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
     # Verify password (bcrypt hash takes priority over plain-text)
     if cfg_hash and _JWT_AVAILABLE:
@@ -248,14 +286,33 @@ def admin_login(body: dict):
         raise HTTPException(status_code=503, detail="Admin credentials not configured on server")
 
     if not valid:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
     if not _JWT_AVAILABLE:
         raise HTTPException(status_code=503, detail="JWT library not available on server")
 
     token = _create_token({"sub": username, "role": "admin"})
     logger.info("Admin login successful: %s", username)
-    return {"access_token": token, "token_type": "bearer", "expires_in_hours": JWT_EXPIRE_H}
+
+    # Set JWT in HttpOnly cookie
+    response = JSONResponse(content={"message": "Login successful"})
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        secure=False,   # set to True in production (HTTPS)
+        samesite="Lax",
+        max_age=86400,
+    )
+    return response
+
+
+@app.post("/api/admin/logout")
+def admin_logout():
+    """Clear the HttpOnly JWT cookie."""
+    response = JSONResponse(content={"message": "Logged out"})
+    response.delete_cookie(key="access_token")
+    return response
 
 
 # ── RESTAURANTS (Multi-SaaS) ──────────────────────────────────────────────────
